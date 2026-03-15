@@ -1,9 +1,19 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from database import init_db
 from routers import videos, pigeons, insights, review, training, export, stats
 
-app = FastAPI(title="PigeonLab API")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    yield
+
+
+app = FastAPI(title="PigeonLab API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
