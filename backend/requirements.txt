@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+python-multipart
+aiofiles
+pillow
+numpy
+opencv-python
+torch
+torchvision
