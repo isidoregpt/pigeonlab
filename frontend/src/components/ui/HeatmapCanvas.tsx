@@ -4,12 +4,14 @@ interface HeatmapCanvasProps {
   grid: number[][];
   accent?: [number, number, number];
   emptyMessage?: string;
+  className?: string;
 }
 
 export default function HeatmapCanvas({
   grid,
   accent = [13, 148, 136],
   emptyMessage = "No heatmap data available.",
+  className,
 }: HeatmapCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rows = grid.length;
@@ -54,7 +56,7 @@ export default function HeatmapCanvas({
       ref={canvasRef}
       width={cols * 6}
       height={rows * 6}
-      className="w-full rounded-lg border border-border"
+      className={`w-full rounded-lg border border-border ${className ?? ""}`}
       style={{ imageRendering: "pixelated", aspectRatio: `${cols}/${rows}` }}
     />
   );
