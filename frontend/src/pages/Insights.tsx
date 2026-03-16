@@ -440,10 +440,54 @@ export default function Insights() {
           {droppingsQuery.isError ? (
             <SectionEmpty message="Failed to load droppings data." />
           ) : droppingsQuery.data?.grid?.length ? (
-            <HeatmapCanvas
-              grid={droppingsQuery.data.grid}
-              accent={[220, 38, 38]}
-            />
+            <>
+              <HeatmapCanvas
+                grid={droppingsQuery.data.grid}
+                accent={[220, 38, 38]}
+              />
+
+              {/* Zone breakdown */}
+              <p className="text-sm text-text-secondary mt-4">
+                Total:{" "}
+                <span className="font-medium text-text-primary">
+                  {droppingsQuery.data.total.toLocaleString()}
+                </span>{" "}
+                droppings detected
+              </p>
+
+              {Object.keys(droppingsQuery.data.by_zone ?? {}).length > 0 && (
+                <div className="h-36 mt-3">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={Object.entries(droppingsQuery.data.by_zone)
+                        .map(([zone, count]) => ({ zone, count }))
+                        .sort((a, b) => b.count - a.count)}
+                      layout="vertical"
+                      margin={{ left: 0, right: 16, top: 0, bottom: 0 }}
+                    >
+                      <XAxis type="number" hide />
+                      <YAxis
+                        type="category"
+                        dataKey="zone"
+                        width={80}
+                        tick={{ fontSize: 12, fill: "#78716C" }}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <Tooltip
+                        formatter={(value: number) => [value, "Droppings"]}
+                        contentStyle={{
+                          fontSize: 12,
+                          borderRadius: 8,
+                          border: "1px solid #E7E5E4",
+                        }}
+                      />
+                      <Bar dataKey="count" radius={[0, 4, 4, 0]} barSize={16} fill="#DC2626" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </>
           ) : (
             <SectionEmpty message="No droppings data for this period." />
           )}
