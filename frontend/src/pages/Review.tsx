@@ -14,6 +14,7 @@ import { getAttentionCount } from "../api/stats";
 import type { VideoAssignment, QCFlag } from "../types";
 import StatusBadge from "../components/ui/StatusBadge";
 import LoadingState from "../components/ui/LoadingState";
+import { useToast } from "../components/ui/Toast";
 
 /* ================================================================
    QC Flag rule_name → plain-language translation
@@ -58,6 +59,7 @@ function IdentityReview({ videoId }: { videoId: number }) {
   const queryClient = useQueryClient();
   const [currentIdx, setCurrentIdx] = useState(0);
   const navigate = useNavigate();
+  const toast = useToast();
 
   const assignmentsQuery = useQuery({
     queryKey: ["unconfirmed-identities", videoId],
@@ -83,11 +85,15 @@ function IdentityReview({ videoId }: { videoId: number }) {
         pigeon_id: pigeonId,
         reviewer: "lab_user",
       }),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
+      toast.success(`Identity confirmed as ${variables.pigeonId}`);
       queryClient.invalidateQueries({
         queryKey: ["unconfirmed-identities", videoId],
       });
       advance();
+    },
+    onError: () => {
+      toast.error("Failed to confirm identity. Please try again.");
     },
   });
 
@@ -230,12 +236,6 @@ function IdentityReview({ videoId }: { videoId: number }) {
         </div>
       </div>
 
-      {confirmMutation.isError && (
-        <p className="text-sm text-error">
-          Failed to confirm identity. Please try again.
-        </p>
-      )}
-
       {/* Progress list */}
       <div className="bg-surface border border-border rounded-xl p-4">
         <h3 className="text-[12px] font-semibold text-text-secondary uppercase tracking-wider mb-2">
@@ -280,6 +280,7 @@ function IdentityReview({ videoId }: { videoId: number }) {
 function QCReview({ videoId }: { videoId?: number }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const toast = useToast();
 
   const flagsQuery = useQuery({
     queryKey: ["qc-flags", videoId],
@@ -294,8 +295,13 @@ function QCReview({ videoId }: { videoId?: number }) {
         resolved_action: "accepted",
         reviewer: "lab_user",
       }),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: ["qc-flags", videoId] }),
+    onSuccess: () => {
+      toast.success("QC flag resolved");
+      queryClient.invalidateQueries({ queryKey: ["qc-flags", videoId] });
+    },
+    onError: () => {
+      toast.error("Failed to resolve QC flag");
+    },
   });
 
   const batchResolveMutation = useMutation({
@@ -309,8 +315,13 @@ function QCReview({ videoId }: { videoId?: number }) {
         });
       }
     },
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: ["qc-flags", videoId] }),
+    onSuccess: () => {
+      toast.success("All low-severity flags resolved");
+      queryClient.invalidateQueries({ queryKey: ["qc-flags", videoId] });
+    },
+    onError: () => {
+      toast.error("Failed to batch resolve flags");
+    },
   });
 
   const flags = flagsQuery.data ?? [];
