@@ -16,7 +16,6 @@ import {
   getInsightsPairwise,
   getInsightsDroppings,
   createExport,
-  getExportDownloadUrl,
 } from "../api/insights";
 import { getPigeons } from "../api/pigeons";
 import { usePageTitle } from "../hooks/usePageTitle";
@@ -239,7 +238,7 @@ export default function Insights() {
       createExport({ format: "csv", include: ["features", "behaviors", "droppings"] }),
     onSuccess: (data) => {
       if (data.download_url) {
-        window.open(getExportDownloadUrl(data.download_url), "_blank");
+        window.open(data.download_url, "_blank");
       }
     },
   });
