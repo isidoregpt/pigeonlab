@@ -101,12 +101,12 @@ def seed():
             cur.execute(
                 """INSERT INTO video_assignments
                    (video_id, video_obj_id, pigeon_id, confidence, match_method,
-                    review_status, assigned_at)
-                   VALUES (?, ?, ?, ?, ?, 'raw', ?)""",
+                    review_status, assigned_at, created_at)
+                   VALUES (?, ?, ?, ?, ?, 'raw', ?, ?)""",
                 (vid_id, obj_idx, pigeon_id,
                  round(random.uniform(0.65, 0.98), 3),
                  random.choice(["marker", "appearance", "spatial"]),
-                 now.isoformat()),
+                 now.isoformat(), now.isoformat()),
             )
             assignment_count += 1
 
@@ -137,10 +137,11 @@ def seed():
     for flag in qc_flags:
         cur.execute(
             """INSERT INTO qc_flags
-               (video_id, frame_idx, rule_name, severity, reason, review_status)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               (video_id, frame_idx, rule_name, severity, reason, review_status, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (flag["video_id"], flag["frame_idx"], flag["rule_name"],
-             flag["severity"], flag["reason"], flag["review_status"]),
+             flag["severity"], flag["reason"], flag["review_status"],
+             now.isoformat()),
         )
 
     print(f"  Inserted {len(qc_flags)} QC flags")
