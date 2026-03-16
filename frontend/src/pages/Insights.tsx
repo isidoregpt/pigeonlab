@@ -153,6 +153,7 @@ export default function Insights() {
   const [period, setPeriod] = useState<Period>("week");
   const [pigeonFilter, setPigeonFilter] = useState("all");
   const [periodOpen, setPeriodOpen] = useState(false);
+  const [behaviorPigeonFilter, setBehaviorPigeonFilter] = useState("all");
   const [sessionA, setSessionA] = useState("");
   const [sessionB, setSessionB] = useState("");
 
@@ -211,13 +212,18 @@ export default function Insights() {
     const pigeons = behaviorsQuery.data?.pigeons;
     if (!pigeons) return { data: [], behaviorKeys: [] as string[] };
 
+    const filtered =
+      behaviorPigeonFilter === "all"
+        ? Object.entries(pigeons)
+        : Object.entries(pigeons).filter(([id]) => id === behaviorPigeonFilter);
+
     const behaviorSet = new Set<string>();
-    for (const behaviors of Object.values(pigeons)) {
+    for (const [, behaviors] of filtered) {
       for (const bk of Object.keys(behaviors)) behaviorSet.add(bk);
     }
     const behaviorKeys = Array.from(behaviorSet);
 
-    const data = Object.entries(pigeons).map(([pigeonId, behaviors]) => {
+    const data = filtered.map(([pigeonId, behaviors]) => {
       const row: Record<string, string | number> = { pigeon: pigeonId };
       for (const bk of behaviorKeys) {
         row[bk] = behaviors[bk]?.duration_seconds ?? 0;
@@ -226,7 +232,7 @@ export default function Insights() {
     });
 
     return { data, behaviorKeys };
-  }, [behaviorsQuery.data]);
+  }, [behaviorsQuery.data, behaviorPigeonFilter]);
 
   return (
     <div className="space-y-8 max-w-5xl">
@@ -319,6 +325,26 @@ export default function Insights() {
           <h2 className="text-sm font-semibold text-text-primary mb-4">
             Behavior Summary
           </h2>
+
+          {/* Pigeon filter buttons */}
+          <div className="flex flex-wrap gap-2 mb-4">
+            <FilterButton
+              active={behaviorPigeonFilter === "all"}
+              onClick={() => setBehaviorPigeonFilter("all")}
+            >
+              All
+            </FilterButton>
+            {pigeonIds.map((id) => (
+              <FilterButton
+                key={id}
+                active={behaviorPigeonFilter === id}
+                onClick={() => setBehaviorPigeonFilter(id)}
+              >
+                {id}
+              </FilterButton>
+            ))}
+          </div>
+
           {behaviorChartData.data.length === 0 ? (
             <SectionEmpty message="No behavior data for this period." />
           ) : (
