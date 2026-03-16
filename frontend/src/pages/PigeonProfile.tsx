@@ -21,6 +21,24 @@ import {
 import { usePageTitle } from "../hooks/usePageTitle";
 import HeatmapCanvas from "../components/ui/HeatmapCanvas";
 
+function formatRelativeTime(dateStr: string): string {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffSecs = Math.floor(diffMs / 1000);
+  const diffMins = Math.floor(diffSecs / 60);
+  const diffHours = Math.floor(diffMins / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffDays > 30) {
+    return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  }
+  if (diffDays > 0) return `${diffDays}d ago`;
+  if (diffHours > 0) return `${diffHours}h ago`;
+  if (diffMins > 0) return `${diffMins}m ago`;
+  return "just now";
+}
+
 const ZONE_COLORS = [
   "#0D9488", // accent
   "#14B8A6",
@@ -229,6 +247,22 @@ export default function PigeonProfile() {
                       {pigeon.physical_markers}
                     </p>
                   )}
+                  {pigeon.notes && (
+                    <p className="text-sm text-text-secondary/70 mt-1">
+                      {pigeon.notes}
+                    </p>
+                  )}
+                  <div className="flex items-center gap-3 mt-2 text-xs text-text-secondary">
+                    {pigeon.first_seen && (
+                      <span>First seen {formatRelativeTime(pigeon.first_seen)}</span>
+                    )}
+                    {pigeon.last_seen && (
+                      <span>Last seen {formatRelativeTime(pigeon.last_seen)}</span>
+                    )}
+                    {pigeon.total_frames_observed > 0 && (
+                      <span>Observed in {pigeon.total_frames_observed.toLocaleString()} frames</span>
+                    )}
+                  </div>
                 </div>
               </div>
               <button
