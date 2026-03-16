@@ -1,6 +1,6 @@
 import type { ReviewStatus, ProcessingStatus, QCFlagStatus } from "./types";
 
-type AnyStatus = ReviewStatus | ProcessingStatus | QCFlagStatus | string;
+export type AnyStatus = ReviewStatus | ProcessingStatus | QCFlagStatus | string;
 
 const statusLabels: Record<string, string> = {
   raw: "Raw",
@@ -36,4 +36,22 @@ const statusColors: Record<string, string> = {
 
 export function getStatusColor(status: AnyStatus): string {
   return statusColors[status] ?? "bg-gray-100 text-gray-600";
+}
+
+const dotColors: Record<string, string> = {
+  raw: "bg-gray-400",
+  reviewed: "bg-accent",
+  approved: "bg-success",
+  rejected: "bg-error",
+  queued: "bg-gray-400",
+  processing: "bg-accent",
+  completed: "bg-success",
+  failed: "bg-error",
+  pending: "bg-warning",
+  acknowledged: "bg-accent",
+  resolved: "bg-success",
+};
+
+export function getStatusDotColor(status: AnyStatus): string {
+  return dotColors[status] ?? "bg-gray-400";
 }
