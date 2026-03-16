@@ -110,10 +110,10 @@ export default function VideoDetail() {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       if (e.key === "ArrowLeft") {
         e.preventDefault();
-        goToFrame(frameNum - 1);
+        goToFrame(frameNum - (e.shiftKey ? 10 : 1));
       } else if (e.key === "ArrowRight") {
         e.preventDefault();
-        goToFrame(frameNum + 1);
+        goToFrame(frameNum + (e.shiftKey ? 10 : 1));
       }
     };
     window.addEventListener("keydown", handleKey);
@@ -182,38 +182,61 @@ export default function VideoDetail() {
 
             {/* Controls */}
             {totalFrames > 0 && (
-              <div className="px-4 py-3 flex items-center gap-3">
-                <button
-                  onClick={() => goToFrame(frameNum - 1)}
-                  disabled={frameNum <= 0}
-                  className="p-1.5 rounded-lg hover:bg-bg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                  aria-label="Previous frame"
-                >
-                  <ChevronLeft size={18} />
-                </button>
+              <div className="px-4 py-3 space-y-2">
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => goToFrame(frameNum - 1)}
+                    disabled={frameNum <= 0}
+                    className="p-1.5 rounded-lg hover:bg-bg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                    aria-label="Previous frame"
+                  >
+                    <ChevronLeft size={18} />
+                  </button>
 
-                <span className="text-sm text-text-primary tabular-nums whitespace-nowrap">
-                  Frame {frameNum + 1} of {totalFrames}
-                </span>
+                  <span className="text-sm text-text-primary tabular-nums whitespace-nowrap">
+                    Frame{" "}
+                    <input
+                      type="number"
+                      min={1}
+                      max={totalFrames}
+                      value={frameNum + 1}
+                      onChange={(e) => {
+                        const v = parseInt(e.target.value, 10);
+                        if (!Number.isNaN(v)) goToFrame(v - 1);
+                      }}
+                      className="w-16 px-1.5 py-0.5 bg-bg border border-border rounded text-sm text-center tabular-nums focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-colors"
+                      aria-label="Frame number"
+                    />{" "}
+                    of {totalFrames}
+                    {video.fps != null && video.fps > 0 && (
+                      <span className="text-text-secondary ml-2">
+                        ({formatTimestamp(frameNum / video.fps)})
+                      </span>
+                    )}
+                  </span>
 
-                <button
-                  onClick={() => goToFrame(frameNum + 1)}
-                  disabled={frameNum >= totalFrames - 1}
-                  className="p-1.5 rounded-lg hover:bg-bg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                  aria-label="Next frame"
-                >
-                  <ChevronRight size={18} />
-                </button>
+                  <button
+                    onClick={() => goToFrame(frameNum + 1)}
+                    disabled={frameNum >= totalFrames - 1}
+                    className="p-1.5 rounded-lg hover:bg-bg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                    aria-label="Next frame"
+                  >
+                    <ChevronRight size={18} />
+                  </button>
 
-                <input
-                  type="range"
-                  min={0}
-                  max={Math.max(0, totalFrames - 1)}
-                  value={frameNum}
-                  onChange={(e) => goToFrame(Number(e.target.value))}
-                  className="flex-1 h-1.5 accent-accent cursor-pointer"
-                  aria-label="Frame scrubber"
-                />
+                  <input
+                    type="range"
+                    min={0}
+                    max={Math.max(0, totalFrames - 1)}
+                    value={frameNum}
+                    onChange={(e) => goToFrame(Number(e.target.value))}
+                    className="flex-1 h-1.5 accent-accent cursor-pointer"
+                    aria-label="Frame scrubber"
+                  />
+                </div>
+                <p className="text-[11px] text-text-secondary/60">
+                  ← → to navigate frames, Shift+← → to jump 10 frames
+                </p>
               </div>
             )}
           </div>
@@ -424,6 +447,12 @@ export default function VideoDetail() {
       </div>
     </div>
   );
+}
+
+function formatTimestamp(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = (seconds % 60).toFixed(1);
+  return `${m}:${s.padStart(4, "0")}`;
 }
 
 function MetaRow({
