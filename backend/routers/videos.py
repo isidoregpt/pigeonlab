@@ -157,3 +157,17 @@ async def update_review(video_id: int, body: ReviewUpdate):
     conn.close()
 
     return {"video_id": video_id, "review_status": body.review_status, "reviewer": body.reviewer}
+
+
+@router.get("/{video_id}/features")
+async def get_video_features(video_id: int, frame_idx: int = Query(...)):
+    conn = get_connection()
+    _get_video_or_404(conn, video_id)
+
+    rows = conn.execute(
+        "SELECT * FROM features WHERE video_id = ? AND frame_idx = ?",
+        (video_id, frame_idx),
+    ).fetchall()
+    conn.close()
+
+    return [dict(r) for r in rows]
