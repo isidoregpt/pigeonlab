@@ -175,6 +175,17 @@ async def attention_items(limit: int = Query(5, ge=1, le=50)):
 
 # --- Identity review ---
 
+@router.get("/identities/next-video")
+async def next_video_for_identity_review():
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT video_id FROM video_assignments WHERE review_status = 'raw' "
+        "ORDER BY video_id LIMIT 1"
+    ).fetchone()
+    conn.close()
+    return {"video_id": row["video_id"] if row else None}
+
+
 @router.get("/identities")
 async def list_unconfirmed_identities(video_id: int = Query(...)):
     conn = get_connection()

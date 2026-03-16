@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ChevronRight, Check, AlertTriangle, Loader2, SkipForward } from "lucide-react";
 import {
+  getNextVideoForIdentityReview,
   getUnconfirmedIdentities,
   reviewIdentity,
   getQCFlags,
@@ -459,6 +460,12 @@ function ReviewQueue() {
     queryFn: getAttentionCount,
   });
 
+  const nextVideoQuery = useQuery({
+    queryKey: ["next-identity-video"],
+    queryFn: getNextVideoForIdentityReview,
+    enabled: (countQuery.data?.identity ?? 0) > 0,
+  });
+
   if (countQuery.isLoading) return <LoadingState />;
 
   if (countQuery.isError) {
@@ -480,7 +487,10 @@ function ReviewQueue() {
       count: counts?.identity ?? 0,
       description:
         "Pigeon identities that need manual confirmation",
-      action: () => navigate("/review?type=identity&video_id=0"),
+      action: () => {
+        const vid = nextVideoQuery.data?.video_id;
+        if (vid) navigate(`/review?type=identity&video_id=${vid}`);
+      },
     },
     {
       key: "qc",

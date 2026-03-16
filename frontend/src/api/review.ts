@@ -3,6 +3,10 @@ import type { VideoAssignment, QCFlag, Behavior, DroppingDetection } from "../ty
 
 // --- Identity ---
 
+export function getNextVideoForIdentityReview() {
+  return get<{ video_id: number | null }>("/review/identities/next-video");
+}
+
 export function getUnconfirmedIdentities(videoId: number) {
   return get<VideoAssignment[]>(`/review/identities?video_id=${videoId}`);
 }
