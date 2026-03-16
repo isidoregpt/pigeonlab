@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from database import init_db
 from routers import videos, pigeons, insights, review, training, export, stats
+from routers.stats import recent_activity as _activity_handler
 
 
 @asynccontextmanager
@@ -30,3 +31,4 @@ app.include_router(review.router, prefix="/api/review", tags=["review"])
 app.include_router(training.router, prefix="/api/training", tags=["training"])
 app.include_router(export.router, prefix="/api/export", tags=["export"])
 app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
+app.get("/api/activity", tags=["stats"])(_activity_handler)
