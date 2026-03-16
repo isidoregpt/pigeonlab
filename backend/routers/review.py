@@ -422,6 +422,29 @@ async def review_behavior(body: BehaviorReviewRequest):
     return dict(updated)
 
 
+# --- Behavior review listing ---
+
+@router.get("/behaviors")
+async def list_behaviors(
+    status: str = Query("raw"),
+    video_id: int | None = Query(None),
+):
+    conn = get_connection()
+
+    query = "SELECT * FROM behaviors WHERE review_status = ?"
+    params: list = [status]
+
+    if video_id is not None:
+        query += " AND video_id = ?"
+        params.append(video_id)
+
+    query += " ORDER BY confidence ASC"
+
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
 # --- Dropping review ---
 
 @router.get("/droppings")
