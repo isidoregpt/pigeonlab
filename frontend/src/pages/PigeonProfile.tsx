@@ -14,10 +14,12 @@ import { ArrowLeft, Pencil, Check, X, Loader2 } from "lucide-react";
 import {
   getPigeon,
   getPigeonBehaviors,
+  getPigeonHeatmap,
   getPigeonIdentityStatus,
   updatePigeon,
 } from "../api/pigeons";
 import { usePageTitle } from "../hooks/usePageTitle";
+import HeatmapCanvas from "../components/ui/HeatmapCanvas";
 
 const ZONE_COLORS = [
   "#0D9488", // accent
@@ -59,6 +61,7 @@ export default function PigeonProfile() {
   const [editing, setEditing] = useState(false);
   const [editMarkers, setEditMarkers] = useState("");
   const [editNotes, setEditNotes] = useState("");
+  const [heatmapPeriod, setHeatmapPeriod] = useState<"day" | "week" | "month">("week");
 
   // Fetch all three in parallel
   const profileQuery = useQuery({
@@ -76,6 +79,12 @@ export default function PigeonProfile() {
   const identityQuery = useQuery({
     queryKey: ["pigeon-identity", pigeonId],
     queryFn: () => getPigeonIdentityStatus(pigeonId),
+    enabled: pigeonId.length > 0,
+  });
+
+  const heatmapQuery = useQuery({
+    queryKey: ["pigeon-heatmap", pigeonId, heatmapPeriod],
+    queryFn: () => getPigeonHeatmap(pigeonId, heatmapPeriod),
     enabled: pigeonId.length > 0,
   });
 
@@ -234,13 +243,46 @@ export default function PigeonProfile() {
         </div>
       ) : null}
 
-      {/* ===== Where [Name] Spends Time ===== */}
+      {/* ===== Heatmap ===== */}
+      <div className="bg-surface border border-border rounded-xl p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-semibold text-text-primary">
+            Where {pigeon?.pigeon_id ?? "Pigeon"} Spends Time
+          </h2>
+          <div className="flex items-center gap-1">
+            {(["day", "week", "month"] as const).map((p) => (
+              <button
+                key={p}
+                onClick={() => setHeatmapPeriod(p)}
+                className={`px-2.5 py-1 text-[11px] font-medium rounded-lg transition-colors ${
+                  heatmapPeriod === p
+                    ? "bg-accent text-white"
+                    : "text-text-secondary hover:text-text-primary hover:bg-bg"
+                }`}
+              >
+                {p === "day" ? "Day" : p === "week" ? "Week" : "Month"}
+              </button>
+            ))}
+          </div>
+        </div>
+        {heatmapQuery.isLoading ? (
+          <div className="h-48 bg-border/20 rounded animate-pulse" />
+        ) : heatmapQuery.data?.grid?.length ? (
+          <HeatmapCanvas grid={heatmapQuery.data.grid} />
+        ) : (
+          <p className="text-sm text-text-secondary py-6 text-center">
+            No heatmap data for this period.
+          </p>
+        )}
+      </div>
+
+      {/* ===== Zone Breakdown ===== */}
       {profileQuery.isLoading ? (
         <SectionSkeleton rows={4} />
       ) : zoneData.length > 0 ? (
         <div className="bg-surface border border-border rounded-xl p-5">
           <h2 className="text-sm font-semibold text-text-primary mb-4">
-            Where {pigeon?.pigeon_id} Spends Time
+            Zone Breakdown
           </h2>
           <div className="h-48">
             <ResponsiveContainer width="100%" height="100%">
@@ -306,7 +348,7 @@ export default function PigeonProfile() {
       ) : !profileQuery.isLoading ? (
         <div className="bg-surface border border-border rounded-xl p-5">
           <h2 className="text-sm font-semibold text-text-primary mb-2">
-            Where {pigeon?.pigeon_id} Spends Time
+            Zone Breakdown
           </h2>
           <p className="text-sm text-text-secondary">
             No zone data available yet.

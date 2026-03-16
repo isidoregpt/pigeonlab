@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   BarChart,
@@ -19,6 +19,7 @@ import {
 } from "../api/insights";
 import { getPigeons } from "../api/pigeons";
 import { usePageTitle } from "../hooks/usePageTitle";
+import HeatmapCanvas from "../components/ui/HeatmapCanvas";
 
 type Period = "day" | "week" | "month" | "all";
 const PERIOD_LABELS: Record<Period, string> = {
@@ -55,59 +56,6 @@ function SectionSkeleton({ h = 200 }: { h?: number }) {
 function SectionEmpty({ message }: { message: string }) {
   return (
     <p className="text-sm text-text-secondary py-6 text-center">{message}</p>
-  );
-}
-
-/* ================================================================
-   Heatmap Grid (shared by zone heatmap + droppings)
-   ================================================================ */
-function HeatmapCanvas({
-  grid,
-  accent = [13, 148, 136],
-}: {
-  grid: number[][];
-  accent?: [number, number, number];
-}) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const rows = grid.length;
-  const cols = rows > 0 ? grid[0].length : 0;
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || rows === 0 || cols === 0) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    const cellW = canvas.width / cols;
-    const cellH = canvas.height / rows;
-
-    // Find max value
-    let max = 0;
-    for (const row of grid) for (const v of row) if (v > max) max = v;
-    if (max === 0) max = 1;
-
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        const t = grid[r][c] / max;
-        const red = Math.round(255 + (accent[0] - 255) * t);
-        const green = Math.round(255 + (accent[1] - 255) * t);
-        const blue = Math.round(255 + (accent[2] - 255) * t);
-        ctx.fillStyle = `rgb(${red},${green},${blue})`;
-        ctx.fillRect(c * cellW, r * cellH, cellW + 0.5, cellH + 0.5);
-      }
-    }
-  }, [grid, rows, cols, accent]);
-
-  if (rows === 0) return <SectionEmpty message="No heatmap data available." />;
-
-  return (
-    <canvas
-      ref={canvasRef}
-      width={cols * 6}
-      height={rows * 6}
-      className="w-full rounded-lg border border-border"
-      style={{ imageRendering: "pixelated", aspectRatio: `${cols}/${rows}` }}
-    />
   );
 }
 
