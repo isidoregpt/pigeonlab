@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Plus, Search, Loader2 } from "lucide-react";
+import { usePageTitle } from "../hooks/usePageTitle";
 import { getVideos } from "../api/videos";
 import type { Video } from "../types";
 import VideoCard from "../components/ui/VideoCard";
@@ -43,6 +44,7 @@ function groupByDate(videos: Video[]): [string, Video[]][] {
 }
 
 export default function Videos() {
+  usePageTitle("Videos");
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);

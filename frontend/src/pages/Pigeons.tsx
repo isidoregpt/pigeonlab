@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
+import { usePageTitle } from "../hooks/usePageTitle";
 import { getPigeons } from "../api/pigeons";
 import PigeonCard from "../components/ui/PigeonCard";
 import LoadingState from "../components/ui/LoadingState";
@@ -8,6 +9,7 @@ import EmptyState from "../components/ui/EmptyState";
 import RegisterPigeonModal from "../components/ui/RegisterPigeonModal";
 
 export default function Pigeons() {
+  usePageTitle("Pigeons");
   const [modalOpen, setModalOpen] = useState(false);
 
   const { data: pigeons, isLoading, isError, refetch } = useQuery({

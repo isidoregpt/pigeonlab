@@ -19,6 +19,7 @@ import {
   getExportDownloadUrl,
 } from "../api/insights";
 import { getPigeons } from "../api/pigeons";
+import { usePageTitle } from "../hooks/usePageTitle";
 
 type Period = "day" | "week" | "month" | "all";
 const PERIOD_LABELS: Record<Period, string> = {
@@ -199,6 +200,7 @@ function SocialMap({
    Main Insights Page
    ================================================================ */
 export default function Insights() {
+  usePageTitle("Insights");
   const [period, setPeriod] = useState<Period>("week");
   const [pigeonFilter, setPigeonFilter] = useState("all");
   const [periodOpen, setPeriodOpen] = useState(false);

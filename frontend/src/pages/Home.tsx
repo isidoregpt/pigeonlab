@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
+import { usePageTitle } from "../hooks/usePageTitle";
 import { getStatsToday } from "../api/stats";
 import { getAttentionItems } from "../api/stats";
 import { getStatsSummary } from "../api/stats";
@@ -15,6 +16,7 @@ const severityDots: Record<string, string> = {
 };
 
 export default function Home() {
+  usePageTitle("Home");
   const navigate = useNavigate();
 
   const statsQuery = useQuery({ queryKey: ["stats-today"], queryFn: getStatsToday });

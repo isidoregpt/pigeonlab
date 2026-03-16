@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,9 +8,14 @@ from database import init_db
 from routers import videos, pigeons, insights, review, training, export, stats
 from routers.stats import recent_activity as _activity_handler
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DATA_DIRS = ["data", "data/videos", "data/clips", "data/models", "data/exports", "data/frames"]
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    for d in DATA_DIRS:
+        (PROJECT_ROOT / d).mkdir(parents=True, exist_ok=True)
     init_db()
     yield
 
@@ -32,3 +38,8 @@ app.include_router(training.router, prefix="/api/training", tags=["training"])
 app.include_router(export.router, prefix="/api/export", tags=["export"])
 app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
 app.get("/api/activity", tags=["stats"])(_activity_handler)
+
+
+@app.get("/api/health", tags=["health"])
+async def health_check():
+    return {"status": "ok"}

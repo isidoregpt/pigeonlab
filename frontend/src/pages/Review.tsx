@@ -15,6 +15,7 @@ import type { VideoAssignment, QCFlag } from "../types";
 import StatusBadge from "../components/ui/StatusBadge";
 import LoadingState from "../components/ui/LoadingState";
 import { useToast } from "../components/ui/Toast";
+import { usePageTitle } from "../hooks/usePageTitle";
 
 /* ================================================================
    QC Flag rule_name → plain-language translation
@@ -39,6 +40,7 @@ function translateFlag(flag: QCFlag): string {
    Main Review Page
    ================================================================ */
 export default function Review() {
+  usePageTitle("Review");
   const [params] = useSearchParams();
   const type = params.get("type");
   const videoId = params.get("video_id");

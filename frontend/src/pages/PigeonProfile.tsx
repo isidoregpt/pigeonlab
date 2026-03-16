@@ -17,6 +17,7 @@ import {
   getPigeonIdentityStatus,
   updatePigeon,
 } from "../api/pigeons";
+import { usePageTitle } from "../hooks/usePageTitle";
 
 const ZONE_COLORS = [
   "#0D9488", // accent
@@ -49,6 +50,7 @@ function SectionSkeleton({ rows = 3 }: { rows?: number }) {
 }
 
 export default function PigeonProfile() {
+  usePageTitle("Pigeon Profile");
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();

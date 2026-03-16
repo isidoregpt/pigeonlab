@@ -22,6 +22,7 @@ import type { ClipWithLabel, TrainConfig } from "../api/training";
 import type { ModelRegistryEntry } from "../types";
 import LoadingState from "../components/ui/LoadingState";
 import EmptyState from "../components/ui/EmptyState";
+import { usePageTitle } from "../hooks/usePageTitle";
 
 /* ================================================================ */
 const TABS = ["Clip Library", "Label Clips", "Train Model", "Model History"] as const;
@@ -52,6 +53,7 @@ const MIN_CLIPS_PER_CLASS = 20;
 
 /* ================================================================ */
 export default function Training() {
+  usePageTitle("Training");
   const [tab, setTab] = useState<Tab>("Clip Library");
   const [labelClipId, setLabelClipId] = useState<number | null>(null);
 
