@@ -287,27 +287,59 @@ export default function VideoDetail() {
               </p>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {features.map((f) => (
-                  <div
-                    key={f.id}
-                    className="bg-surface border border-border rounded-xl px-4 py-3 flex items-center gap-3"
-                  >
-                    <span className="text-lg">🕊️</span>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-text-primary truncate">
-                        {f.pigeon_id}
-                      </p>
-                      <div className="flex items-center gap-3 text-[12px] text-text-secondary mt-0.5">
-                        {f.current_zone && <span>Zone: {f.current_zone}</span>}
-                        <span>
-                          {f.velocity_mm_s != null && f.velocity_mm_s > 5
-                            ? "Moving"
-                            : "Stationary"}
-                        </span>
+                {features.map((f) => {
+                  const isMoving = f.velocity_mm_s != null && f.velocity_mm_s > 5;
+                  const conf = f.confidence ?? 1;
+                  return (
+                    <div
+                      key={f.id}
+                      onClick={() => navigate(`/pigeons/${f.pigeon_id}`)}
+                      className="relative bg-surface border border-border rounded-xl px-4 py-3 flex items-center gap-3 cursor-pointer hover:border-accent hover:shadow-md transition-all overflow-hidden"
+                    >
+                      {/* Confidence bar */}
+                      <div
+                        className="absolute bottom-0 left-0 h-0.5 bg-accent/40 transition-all"
+                        style={{ width: `${conf * 100}%` }}
+                      />
+                      <span className="text-lg">🕊️</span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium text-text-primary truncate">
+                            {f.pigeon_id}
+                          </p>
+                          {f.heading_deg != null && (
+                            <span
+                              className="text-text-secondary text-xs leading-none"
+                              title={`Heading: ${Math.round(f.heading_deg)}°`}
+                            >
+                              <span
+                                className="inline-block"
+                                style={{ transform: `rotate(${f.heading_deg}deg)` }}
+                              >
+                                ↑
+                              </span>
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3 text-[12px] mt-0.5">
+                          {f.current_zone && (
+                            <span className="text-text-secondary">
+                              Zone: {f.current_zone}
+                            </span>
+                          )}
+                          <span className={isMoving ? "text-accent font-medium" : "text-text-secondary"}>
+                            {isMoving ? "Moving" : "Stationary"}
+                          </span>
+                          {f.velocity_mm_s != null && (
+                            <span className="text-text-secondary">
+                              {f.velocity_mm_s.toFixed(1)} mm/s
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </section>
