@@ -44,6 +44,12 @@ export function reviewQCFlag(payload: QCFlagReviewPayload) {
   return post<QCFlag>("/review/qc-flag", payload);
 }
 
+// --- Droppings List ---
+
+export function getDroppingsForReview(status = "raw", limit = 50) {
+  return get<DroppingDetection[]>(`/review/droppings?status=${status}&limit=${limit}`);
+}
+
 // --- Mask Edit ---
 
 interface MaskEditPayload {

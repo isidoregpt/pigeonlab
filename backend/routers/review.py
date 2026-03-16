@@ -424,6 +424,20 @@ async def review_behavior(body: BehaviorReviewRequest):
 
 # --- Dropping review ---
 
+@router.get("/droppings")
+async def list_droppings(
+    status: str = Query("raw"),
+    limit: int = Query(50, ge=1, le=200),
+):
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM droppings WHERE review_status = ? ORDER BY confidence ASC LIMIT ?",
+        (status, limit),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
 @router.post("/dropping")
 async def review_dropping(body: DroppingReviewRequest):
     conn = get_connection()
