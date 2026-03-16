@@ -11,16 +11,15 @@ import {
 import {
   getClips,
   labelClip,
-  getClassCounts,
+  getReadiness,
   startTraining,
   getTrainingStatus,
   getModels,
   activateModel,
-  reinferAll,
+  reinferVideos,
 } from "../api/training";
 import type { ClipWithLabel, TrainConfig } from "../api/training";
 import type { ModelRegistryEntry } from "../types";
-import StatusBadge from "../components/ui/StatusBadge";
 import LoadingState from "../components/ui/LoadingState";
 import EmptyState from "../components/ui/EmptyState";
 
@@ -105,7 +104,7 @@ function ClipLibraryTab({ onLabel }: { onLabel: (id: number) => void }) {
     queryFn: () => getClips(pigeonFilter, labeledFilter),
   });
 
-  const clips = clipsQuery.data ?? [];
+  const clips = clipsQuery.data?.clips ?? [];
 
   // Unique pigeons
   const pigeonIds = [...new Set(clips.map((c) => c.pigeon_id).filter(Boolean))] as string[];
@@ -219,7 +218,7 @@ function LabelClipsTab({
     queryFn: () => getClips("all", "unlabeled"),
   });
 
-  const clips = clipsQuery.data ?? [];
+  const clips = clipsQuery.data?.clips ?? [];
 
   // Find starting index
   const startIdx = preselectedId != null
@@ -242,7 +241,7 @@ function LabelClipsTab({
       labelClip(clipId, behavior),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["training-clips"] });
-      queryClient.invalidateQueries({ queryKey: ["class-counts"] });
+      queryClient.invalidateQueries({ queryKey: ["training-readiness"] });
       setCurrentIdx((i) => Math.min(i + 1, clips.length));
     },
   });
@@ -384,9 +383,9 @@ function TrainModelTab() {
   );
   const [jobId, setJobId] = useState<string | null>(null);
 
-  const countsQuery = useQuery({
-    queryKey: ["class-counts"],
-    queryFn: getClassCounts,
+  const readinessQuery = useQuery({
+    queryKey: ["training-readiness"],
+    queryFn: getReadiness,
   });
 
   const trainMutation = useMutation({
@@ -401,10 +400,11 @@ function TrainModelTab() {
     refetchInterval: 3000,
   });
 
-  const counts = countsQuery.data ?? {};
+  const readiness = readinessQuery.data;
+  const readinessClasses = readiness?.classes ?? {};
   const allClasses = [
     ...BEHAVIOR_CLASSES,
-    ...Object.keys(counts).filter(
+    ...Object.keys(readinessClasses).filter(
       (k) => !(BEHAVIOR_CLASSES as readonly string[]).includes(k),
     ),
   ];
@@ -436,51 +436,70 @@ function TrainModelTab() {
         <h2 className="text-sm font-semibold text-text-primary mb-3">
           Training Readiness
         </h2>
-        {countsQuery.isLoading ? (
+        {readinessQuery.isLoading ? (
           <div className="space-y-2">
             {[0, 1, 2].map((i) => (
               <div key={i} className="h-5 bg-border/30 rounded animate-pulse" />
             ))}
           </div>
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-[12px] text-text-secondary uppercase tracking-wider">
-                <th className="text-left pb-2 font-medium">Class</th>
-                <th className="text-right pb-2 font-medium">Clips</th>
-                <th className="text-right pb-2 font-medium">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {allClasses.map((cls) => {
-                const count = counts[cls] ?? 0;
-                const ready = count >= MIN_CLIPS_PER_CLASS;
-                return (
-                  <tr key={cls}>
-                    <td className="py-2 text-text-primary">{cls}</td>
-                    <td className="py-2 text-right tabular-nums text-text-secondary">
-                      {count}
-                    </td>
-                    <td className="py-2 text-right">
-                      <span
-                        className={`inline-flex items-center gap-1 text-[11px] font-medium ${
-                          ready ? "text-success" : "text-error"
-                        }`}
-                      >
-                        {ready ? (
-                          <>
-                            <Check size={12} /> Ready
-                          </>
-                        ) : (
-                          <>Need {MIN_CLIPS_PER_CLASS - count} more</>
-                        )}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <>
+            {readiness && (
+              <p className="text-[12px] text-text-secondary mb-3">
+                {readiness.total_labeled_clips} clips labeled across{" "}
+                {readiness.num_classes} classes.
+                {readiness.all_ready ? (
+                  <span className="text-success font-medium"> All classes ready!</span>
+                ) : (
+                  <span className="text-warning font-medium"> Some classes need more clips.</span>
+                )}
+              </p>
+            )}
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-[12px] text-text-secondary uppercase tracking-wider">
+                  <th className="text-left pb-2 font-medium">Class</th>
+                  <th className="text-right pb-2 font-medium">Clips</th>
+                  <th className="text-right pb-2 font-medium">Min</th>
+                  <th className="text-right pb-2 font-medium">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {allClasses.map((cls) => {
+                  const info = readinessClasses[cls];
+                  const count = info?.count ?? 0;
+                  const ready = info?.ready ?? false;
+                  const needed = info?.needed ?? MIN_CLIPS_PER_CLASS;
+                  return (
+                    <tr key={cls}>
+                      <td className="py-2 text-text-primary">{cls}</td>
+                      <td className="py-2 text-right tabular-nums text-text-secondary">
+                        {count}
+                      </td>
+                      <td className="py-2 text-right tabular-nums text-text-secondary/60">
+                        {MIN_CLIPS_PER_CLASS}
+                      </td>
+                      <td className="py-2 text-right">
+                        <span
+                          className={`inline-flex items-center gap-1 text-[11px] font-medium ${
+                            ready ? "text-success" : "text-error"
+                          }`}
+                        >
+                          {ready ? (
+                            <>
+                              <Check size={12} /> Ready
+                            </>
+                          ) : (
+                            <>Need {needed} more</>
+                          )}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </>
         )}
       </section>
 
@@ -657,7 +676,7 @@ function ModelHistoryTab() {
   });
 
   const reinferMutation = useMutation({
-    mutationFn: reinferAll,
+    mutationFn: () => reinferVideos({}),
     onSuccess: () => setConfirmReinfer(false),
   });
 
@@ -744,9 +763,10 @@ function ModelHistoryTab() {
           </button>
         )}
 
-        {reinferMutation.isSuccess && (
+        {reinferMutation.isSuccess && reinferMutation.data && (
           <p className="text-sm text-success mt-2">
-            Re-inference started on all videos.
+            Re-inference started: {reinferMutation.data.videos_eligible} videos
+            eligible, {reinferMutation.data.videos_skipped} skipped.
           </p>
         )}
         {reinferMutation.isError && (
