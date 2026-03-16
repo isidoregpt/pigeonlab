@@ -45,6 +45,16 @@ def _get_video_or_404(conn, video_id: int) -> dict:
 
 # --- Endpoints ---
 
+@router.get("/sessions")
+async def list_sessions():
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT DISTINCT session_id FROM videos WHERE session_id IS NOT NULL ORDER BY session_id"
+    ).fetchall()
+    conn.close()
+    return [r["session_id"] for r in rows]
+
+
 @router.get("/")
 async def list_videos(
     sort: str = Query("date"),
