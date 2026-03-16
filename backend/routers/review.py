@@ -173,6 +173,25 @@ async def attention_items(limit: int = Query(5, ge=1, le=50)):
             "link": f"/videos/{row['video_id']}",
         })
 
+    rows = conn.execute(
+        """SELECT id, video_id, pigeon_id, behavior, confidence, zone
+           FROM behaviors WHERE review_status = 'raw'
+           ORDER BY confidence ASC LIMIT ?""",
+        (limit,),
+    ).fetchall()
+    for row in rows:
+        conf = round(row["confidence"] * 100) if row["confidence"] is not None else 0
+        items.append({
+            "id": row["id"],
+            "type": "behavior",
+            "description": f"{row['pigeon_id']} — {row['behavior'].replace('_', ' ')}"
+                           + (f" in {row['zone']}" if row["zone"] else "")
+                           + f" ({conf}% confidence)",
+            "severity": "high" if conf < 70 else "medium",
+            "video_id": row["video_id"],
+            "link": f"/review?type=behavior",
+        })
+
     severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
     items.sort(key=lambda x: severity_order.get(x["severity"], 4))
     conn.close()
