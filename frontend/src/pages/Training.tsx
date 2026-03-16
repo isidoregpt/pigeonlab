@@ -7,6 +7,10 @@ import {
   AlertTriangle,
   ChevronDown,
   Zap,
+  ArrowUpRight,
+  ArrowDownRight,
+  Minus,
+  X,
 } from "lucide-react";
 import {
   getClips,
@@ -721,6 +725,8 @@ function TrainModelTab() {
 function ModelHistoryTab() {
   const queryClient = useQueryClient();
   const [confirmReinfer, setConfirmReinfer] = useState(false);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [showComparison, setShowComparison] = useState(false);
 
   const modelsQuery = useQuery({
     queryKey: ["models"],
@@ -739,6 +745,25 @@ function ModelHistoryTab() {
   });
 
   const models = modelsQuery.data ?? [];
+
+  function toggleSelect(id: number) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        if (next.size >= 2) return prev;
+        next.add(id);
+      }
+      return next;
+    });
+    setShowComparison(false);
+  }
+
+  const selectedIds = Array.from(selected);
+  const canCompare = selectedIds.length === 2;
+  const comparedA = models.find((m) => m.id === selectedIds[0]);
+  const comparedB = models.find((m) => m.id === selectedIds[1]);
 
   if (modelsQuery.isLoading) return <LoadingState />;
 
@@ -760,6 +785,7 @@ function ModelHistoryTab() {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-[12px] text-text-secondary uppercase tracking-wider bg-bg/50">
+                <th className="w-10 px-3 py-3" />
                 <th className="text-left px-4 py-3 font-medium">Version</th>
                 <th className="text-left px-4 py-3 font-medium">Created</th>
                 <th className="text-right px-4 py-3 font-medium">Train</th>
@@ -776,12 +802,37 @@ function ModelHistoryTab() {
                   model={m}
                   onActivate={() => activateMutation.mutate(m.id)}
                   isActivating={activateMutation.isPending}
+                  checked={selected.has(m.id)}
+                  onToggle={() => toggleSelect(m.id)}
+                  disableCheck={!selected.has(m.id) && selected.size >= 2}
                 />
               ))}
             </tbody>
           </table>
         </div>
       </div>
+
+      {/* Compare button */}
+      {canCompare && !showComparison && (
+        <button
+          onClick={() => setShowComparison(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-accent text-white text-sm font-medium rounded-lg hover:bg-accent/90 transition-colors"
+        >
+          Compare Selected
+        </button>
+      )}
+
+      {/* Comparison panel */}
+      {showComparison && comparedA && comparedB && (
+        <ModelComparison
+          modelA={comparedA}
+          modelB={comparedB}
+          onClose={() => {
+            setShowComparison(false);
+            setSelected(new Set());
+          }}
+        />
+      )}
 
       {/* Reinfer */}
       <div>
@@ -841,16 +892,31 @@ function ModelRow({
   model,
   onActivate,
   isActivating,
+  checked,
+  onToggle,
+  disableCheck,
 }: {
   model: ModelRegistryEntry;
   onActivate: () => void;
   isActivating: boolean;
+  checked: boolean;
+  onToggle: () => void;
+  disableCheck: boolean;
 }) {
   const fmt = (v: number | null) =>
     v != null ? `${(v * 100).toFixed(1)}%` : "—";
 
   return (
-    <tr>
+    <tr className={checked ? "bg-accent/5" : ""}>
+      <td className="px-3 py-3 text-center">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={onToggle}
+          disabled={disableCheck}
+          className="w-4 h-4 rounded border-border text-accent focus:ring-accent/30 disabled:opacity-30"
+        />
+      </td>
       <td className="px-4 py-3 text-text-primary font-medium">
         {model.version ?? model.model_name}
       </td>
@@ -891,6 +957,194 @@ function ModelRow({
       </td>
     </tr>
   );
+}
+
+/* ================================================================
+   Model Comparison Panel
+   ================================================================ */
+function parseConfig(raw: string | null): Record<string, unknown> {
+  if (!raw) return {};
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+function AccuracyCell({
+  label,
+  valA,
+  valB,
+}: {
+  label: string;
+  valA: number | null;
+  valB: number | null;
+}) {
+  const fmt = (v: number | null) => (v != null ? `${(v * 100).toFixed(1)}%` : "—");
+  const diff =
+    valA != null && valB != null ? valB - valA : null;
+
+  return (
+    <div className="text-center space-y-1">
+      <p className="text-[11px] text-text-secondary uppercase tracking-wider">{label}</p>
+      <div className="flex items-center justify-center gap-3">
+        <span className="text-sm tabular-nums text-text-primary">{fmt(valA)}</span>
+        <span className="text-text-secondary/40">→</span>
+        <span className="text-sm tabular-nums text-text-primary">{fmt(valB)}</span>
+      </div>
+      {diff != null && (
+        <div className="flex items-center justify-center gap-0.5">
+          {diff > 0.001 ? (
+            <ArrowUpRight size={12} className="text-success" />
+          ) : diff < -0.001 ? (
+            <ArrowDownRight size={12} className="text-error" />
+          ) : (
+            <Minus size={12} className="text-text-secondary" />
+          )}
+          <span
+            className={`text-[11px] font-medium tabular-nums ${
+              diff > 0.001 ? "text-success" : diff < -0.001 ? "text-error" : "text-text-secondary"
+            }`}
+          >
+            {diff > 0 ? "+" : ""}
+            {(diff * 100).toFixed(1)}pp
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ModelComparison({
+  modelA,
+  modelB,
+  onClose,
+}: {
+  modelA: ModelRegistryEntry;
+  modelB: ModelRegistryEntry;
+  onClose: () => void;
+}) {
+  const nameA = modelA.version ?? modelA.model_name;
+  const nameB = modelB.version ?? modelB.model_name;
+  const configA = parseConfig(modelA.training_config);
+  const configB = parseConfig(modelB.training_config);
+
+  // Collect all config keys
+  const allKeys = Array.from(
+    new Set([...Object.keys(configA), ...Object.keys(configB)]),
+  ).sort();
+
+  // Find differences
+  const configDiffs = allKeys.map((key) => ({
+    key,
+    valA: configA[key],
+    valB: configB[key],
+    changed: JSON.stringify(configA[key]) !== JSON.stringify(configB[key]),
+  }));
+
+  return (
+    <div className="bg-surface border border-border rounded-xl overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between px-5 py-3 border-b border-border bg-bg/30">
+        <h3 className="text-sm font-semibold text-text-primary">
+          Comparing: {nameA} vs {nameB}
+        </h3>
+        <button
+          onClick={onClose}
+          className="p-1 rounded-md hover:bg-bg text-text-secondary hover:text-text-primary transition-colors"
+        >
+          <X size={16} />
+        </button>
+      </div>
+
+      <div className="p-5 space-y-6">
+        {/* Accuracy comparison */}
+        <div>
+          <p className="text-[12px] font-medium text-text-secondary uppercase tracking-wider mb-3">
+            Accuracy Metrics
+          </p>
+          <div className="grid grid-cols-3 gap-4 bg-bg/50 rounded-xl p-4">
+            <AccuracyCell label="Train" valA={modelA.train_accuracy} valB={modelB.train_accuracy} />
+            <AccuracyCell label="Validation" valA={modelA.val_accuracy} valB={modelB.val_accuracy} />
+            <AccuracyCell label="Test" valA={modelA.test_accuracy} valB={modelB.test_accuracy} />
+          </div>
+        </div>
+
+        {/* Training clips comparison */}
+        <div>
+          <p className="text-[12px] font-medium text-text-secondary uppercase tracking-wider mb-3">
+            Training Clips
+          </p>
+          <div className="flex items-center gap-3 text-sm">
+            <span className="text-text-primary tabular-nums">{modelA.training_clips ?? "—"}</span>
+            <span className="text-text-secondary/40">→</span>
+            <span className="text-text-primary tabular-nums">{modelB.training_clips ?? "—"}</span>
+            {modelA.training_clips != null && modelB.training_clips != null && modelB.training_clips !== modelA.training_clips && (
+              <span
+                className={`text-[11px] font-medium ${
+                  modelB.training_clips > modelA.training_clips ? "text-success" : "text-warning"
+                }`}
+              >
+                ({modelB.training_clips > modelA.training_clips ? "+" : ""}
+                {modelB.training_clips - modelA.training_clips})
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Config differences */}
+        {configDiffs.length > 0 && (
+          <div>
+            <p className="text-[12px] font-medium text-text-secondary uppercase tracking-wider mb-3">
+              Training Configuration
+            </p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-[11px] text-text-secondary uppercase tracking-wider">
+                    <th className="text-left pb-2 font-medium">Parameter</th>
+                    <th className="text-right pb-2 font-medium">{nameA}</th>
+                    <th className="text-right pb-2 font-medium">{nameB}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {configDiffs.map(({ key, valA, valB, changed }) => (
+                    <tr key={key} className={changed ? "bg-warning/5" : ""}>
+                      <td className="py-2 text-text-primary">{key}</td>
+                      <td className="py-2 text-right tabular-nums text-text-secondary">
+                        {formatConfigValue(valA)}
+                      </td>
+                      <td
+                        className={`py-2 text-right tabular-nums ${
+                          changed ? "text-accent font-medium" : "text-text-secondary"
+                        }`}
+                      >
+                        {formatConfigValue(valB)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {configDiffs.some((d) => d.changed) && (
+              <p className="text-[11px] text-text-secondary mt-2">
+                Highlighted rows indicate changes between models.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function formatConfigValue(v: unknown): string {
+  if (v === undefined) return "—";
+  if (v === null) return "null";
+  if (typeof v === "boolean") return v ? "true" : "false";
+  if (Array.isArray(v)) return v.join(", ");
+  if (typeof v === "object") return JSON.stringify(v);
+  return String(v);
 }
 
 /* ================================================================
