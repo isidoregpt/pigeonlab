@@ -8,6 +8,10 @@ interface VideosResponse {
   per_page: number;
 }
 
+export function getSessions() {
+  return get<string[]>("/videos/sessions");
+}
+
 export function getVideos(sort = "date", page = 1, perPage = 20) {
   return get<VideosResponse>(`/videos?sort=${sort}&page=${page}&per_page=${perPage}`);
 }

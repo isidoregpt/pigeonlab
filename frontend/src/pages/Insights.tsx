@@ -15,9 +15,11 @@ import {
   getInsightsBehaviors,
   getInsightsPairwise,
   getInsightsDroppings,
+  compareSessionsInsight,
   createExport,
 } from "../api/insights";
 import { getPigeons } from "../api/pigeons";
+import { getSessions } from "../api/videos";
 import { usePageTitle } from "../hooks/usePageTitle";
 import HeatmapCanvas from "../components/ui/HeatmapCanvas";
 
@@ -151,6 +153,8 @@ export default function Insights() {
   const [period, setPeriod] = useState<Period>("week");
   const [pigeonFilter, setPigeonFilter] = useState("all");
   const [periodOpen, setPeriodOpen] = useState(false);
+  const [sessionA, setSessionA] = useState("");
+  const [sessionB, setSessionB] = useState("");
 
   // Fetch registered pigeons for filter buttons
   const pigeonsQuery = useQuery({
@@ -178,6 +182,17 @@ export default function Insights() {
   const droppingsQuery = useQuery({
     queryKey: ["insights-droppings", period],
     queryFn: () => getInsightsDroppings(period),
+  });
+
+  const sessionsQuery = useQuery({
+    queryKey: ["sessions"],
+    queryFn: getSessions,
+  });
+
+  const compareQuery = useQuery({
+    queryKey: ["insights-compare", sessionA, sessionB],
+    queryFn: () => compareSessionsInsight(sessionA, sessionB),
+    enabled: sessionA.length > 0 && sessionB.length > 0 && sessionA !== sessionB,
   });
 
   // Export
@@ -409,7 +424,173 @@ export default function Insights() {
         </section>
       )}
 
-      {/* ===== 5. Export Buttons ===== */}
+      {/* ===== 5. Compare Sessions ===== */}
+      <section className="bg-surface border border-border rounded-xl p-5">
+        <h2 className="text-sm font-semibold text-text-primary mb-4">
+          Compare Sessions
+        </h2>
+        <div className="flex flex-wrap items-center gap-3 mb-4">
+          <select
+            value={sessionA}
+            onChange={(e) => setSessionA(e.target.value)}
+            className="px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-colors"
+          >
+            <option value="">Session A</option>
+            {(sessionsQuery.data ?? []).map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+          <span className="text-sm text-text-secondary">vs</span>
+          <select
+            value={sessionB}
+            onChange={(e) => setSessionB(e.target.value)}
+            className="px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-colors"
+          >
+            <option value="">Session B</option>
+            {(sessionsQuery.data ?? []).map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {!sessionA || !sessionB || sessionA === sessionB ? (
+          <SectionEmpty message="Select two sessions to compare." />
+        ) : compareQuery.isLoading ? (
+          <div className="h-32 bg-border/20 rounded animate-pulse" />
+        ) : compareQuery.isError ? (
+          <SectionEmpty message="Failed to load comparison data." />
+        ) : compareQuery.data ? (
+          <div className="space-y-5">
+            {/* Zone Occupancy Changes */}
+            <div>
+              <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-2">
+                Zone Occupancy Changes
+              </h3>
+              {Object.keys(compareQuery.data.zone_occupancy_diff).length === 0 ? (
+                <SectionEmpty message="No zone occupancy changes." />
+              ) : (
+                <div className="space-y-1">
+                  {Object.entries(compareQuery.data.zone_occupancy_diff).map(
+                    ([pigeon, zones]) => (
+                      <div key={pigeon} className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                        <span className="font-medium text-text-primary w-24 shrink-0">
+                          {pigeon}
+                        </span>
+                        {Object.entries(zones).map(([zone, diff]) => (
+                          <span key={zone} className="text-text-secondary">
+                            {zone}{" "}
+                            <span
+                              className={
+                                diff > 0
+                                  ? "text-success"
+                                  : diff < 0
+                                    ? "text-error"
+                                    : "text-text-secondary"
+                              }
+                            >
+                              {diff > 0 ? "↑" : diff < 0 ? "↓" : "–"}
+                              {Math.abs(diff).toFixed(1)}%
+                            </span>
+                          </span>
+                        ))}
+                      </div>
+                    ),
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Behavior Changes */}
+            <div>
+              <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-2">
+                Behavior Changes
+              </h3>
+              {Object.keys(compareQuery.data.behavior_diff).length === 0 ? (
+                <SectionEmpty message="No behavior changes." />
+              ) : (
+                <div className="space-y-1">
+                  {Object.entries(compareQuery.data.behavior_diff).map(
+                    ([pigeon, behaviors]) => (
+                      <div key={pigeon} className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                        <span className="font-medium text-text-primary w-24 shrink-0">
+                          {pigeon}
+                        </span>
+                        {Object.entries(behaviors).map(([behavior, diff]) => (
+                          <span key={behavior} className="text-text-secondary">
+                            {behavior.replace(/_/g, " ")}{" "}
+                            <span
+                              className={
+                                diff.duration_diff > 0
+                                  ? "text-success"
+                                  : diff.duration_diff < 0
+                                    ? "text-error"
+                                    : "text-text-secondary"
+                              }
+                            >
+                              {diff.duration_diff > 0 ? "↑" : diff.duration_diff < 0 ? "↓" : "–"}
+                              {Math.abs(diff.duration_diff)}s
+                            </span>
+                            {" "}
+                            <span className="text-text-secondary/60">
+                              ({diff.count_diff > 0 ? "+" : ""}
+                              {diff.count_diff} events)
+                            </span>
+                          </span>
+                        ))}
+                      </div>
+                    ),
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Identity Changes */}
+            <div>
+              <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-2">
+                Identity Changes
+              </h3>
+              <div className="flex flex-wrap gap-4 text-sm">
+                <div>
+                  <span className="text-text-secondary">Only in A: </span>
+                  {compareQuery.data.identity_changes.only_in_a.length === 0 ? (
+                    <span className="text-text-secondary/60">none</span>
+                  ) : (
+                    <span className="text-text-primary font-medium">
+                      {compareQuery.data.identity_changes.only_in_a.join(", ")}
+                    </span>
+                  )}
+                </div>
+                <div>
+                  <span className="text-text-secondary">Only in B: </span>
+                  {compareQuery.data.identity_changes.only_in_b.length === 0 ? (
+                    <span className="text-text-secondary/60">none</span>
+                  ) : (
+                    <span className="text-text-primary font-medium">
+                      {compareQuery.data.identity_changes.only_in_b.join(", ")}
+                    </span>
+                  )}
+                </div>
+                <div>
+                  <span className="text-text-secondary">In both: </span>
+                  {compareQuery.data.identity_changes.in_both.length === 0 ? (
+                    <span className="text-text-secondary/60">none</span>
+                  ) : (
+                    <span className="text-text-primary font-medium">
+                      {compareQuery.data.identity_changes.in_both.join(", ")}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </section>
+
+      {/* ===== 6. Export Buttons ===== */}
       <div className="flex items-center gap-3">
         <button
           onClick={() => alert("PDF export coming soon")}
