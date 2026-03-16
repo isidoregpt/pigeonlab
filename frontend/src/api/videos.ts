@@ -46,3 +46,21 @@ export function getFrameUrl(videoId: number, frameNum: number, overlay?: boolean
   const params = overlay ? "?overlay=true" : "";
   return `/api/videos/${videoId}/frame/${frameNum}${params}`;
 }
+
+export function getVideoFeatures(videoId: number, frameIdx: number) {
+  return get<import("../types").Feature[]>(
+    `/videos/${videoId}/features?frame_idx=${frameIdx}`,
+  );
+}
+
+export interface TrackEdit {
+  edit_id: number;
+  edit_type: string;
+  editor: string | null;
+  details: string | null;
+  created_at: string | null;
+}
+
+export function getVideoTrackEdits(videoId: number) {
+  return get<TrackEdit[]>(`/videos/${videoId}/track-edits`);
+}
