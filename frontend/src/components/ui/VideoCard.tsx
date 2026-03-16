@@ -27,7 +27,7 @@ export default function VideoCard({ video }: VideoCardProps) {
             {video.session_id || "No session"}
           </p>
         </div>
-        <StatusBadge status={getDisplayStatus(video)} />
+        <StatusBadge status={getDisplayStatus(video)} entityType="video" />
       </div>
 
       <div className="flex items-center gap-4 text-[12px] text-text-secondary mb-4">

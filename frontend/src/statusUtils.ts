@@ -3,21 +3,30 @@ import type { ReviewStatus, ProcessingStatus, QCFlagStatus } from "./types";
 export type AnyStatus = ReviewStatus | ProcessingStatus | QCFlagStatus | string;
 
 const statusLabels: Record<string, string> = {
-  raw: "Raw",
-  reviewed: "Reviewed",
-  approved: "Approved",
+  raw: "Not yet checked",
+  reviewed: "Checked",
+  approved: "Confirmed",
   rejected: "Rejected",
   queued: "Queued",
   processing: "Processing",
   completed: "Completed",
   failed: "Failed",
-  pending: "Pending",
+  pending: "Needs attention",
   acknowledged: "Acknowledged",
   resolved: "Resolved",
 };
 
 export function getStatusLabel(status: AnyStatus): string {
   return statusLabels[status] ?? status;
+}
+
+const videoStatusLabels: Record<string, string> = {
+  ...statusLabels,
+  approved: "Approved",
+};
+
+export function getVideoStatusLabel(status: AnyStatus): string {
+  return videoStatusLabels[status] ?? status;
 }
 
 const statusColors: Record<string, string> = {

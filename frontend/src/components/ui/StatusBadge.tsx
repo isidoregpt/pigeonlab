@@ -1,12 +1,18 @@
-import { getStatusLabel, getStatusColor, getStatusDotColor } from "../../statusUtils";
+import { getStatusLabel, getVideoStatusLabel, getStatusColor, getStatusDotColor } from "../../statusUtils";
 import type { AnyStatus } from "../../statusUtils";
+
+type EntityType = "video" | "identity" | "behavior" | "default";
 
 interface StatusBadgeProps {
   status: AnyStatus;
   size?: "sm" | "md";
+  entityType?: EntityType;
 }
 
-export default function StatusBadge({ status, size = "sm" }: StatusBadgeProps) {
+export default function StatusBadge({ status, size = "sm", entityType = "default" }: StatusBadgeProps) {
+  const label = entityType === "video"
+    ? getVideoStatusLabel(status)
+    : getStatusLabel(status);
   const sizeClasses = size === "md"
     ? "px-2.5 py-1 text-xs"
     : "px-2 py-0.5 text-[11px]";
@@ -18,7 +24,7 @@ export default function StatusBadge({ status, size = "sm" }: StatusBadgeProps) {
       className={`inline-flex items-center gap-1.5 rounded-full font-medium ${getStatusColor(status)} ${sizeClasses}`}
     >
       <span className={`${dotSize} rounded-full shrink-0 ${getStatusDotColor(status)}`} />
-      {getStatusLabel(status)}
+      {label}
     </span>
   );
 }
