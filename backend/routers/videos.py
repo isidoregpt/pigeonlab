@@ -171,3 +171,27 @@ async def get_video_features(video_id: int, frame_idx: int = Query(...)):
     conn.close()
 
     return [dict(r) for r in rows]
+
+
+@router.get("/{video_id}/track-edits")
+async def get_video_track_edits(video_id: int):
+    conn = get_connection()
+    _get_video_or_404(conn, video_id)
+
+    rows = conn.execute(
+        "SELECT id, edit_type, editor, details, edited_at FROM track_edits "
+        "WHERE video_id = ? ORDER BY edited_at DESC",
+        (video_id,),
+    ).fetchall()
+    conn.close()
+
+    return [
+        {
+            "edit_id": r["id"],
+            "edit_type": r["edit_type"],
+            "editor": r["editor"],
+            "details": r["details"],
+            "created_at": r["edited_at"],
+        }
+        for r in rows
+    ]
