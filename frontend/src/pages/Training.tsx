@@ -216,11 +216,17 @@ function LabelClipsTab({
   const queryClient = useQueryClient();
 
   const clipsQuery = useQuery({
-    queryKey: ["training-clips", "all", "unlabeled"],
-    queryFn: () => getClips("all", "unlabeled"),
+    queryKey: ["training-clips", "all", "all"],
+    queryFn: () => getClips("all", "all"),
   });
 
-  const clips = clipsQuery.data?.clips ?? [];
+  const allClips = clipsQuery.data?.clips ?? [];
+  // Show unlabeled first, then labeled (for re-labeling)
+  const clips = [...allClips].sort((a, b) => {
+    if (a.label && !b.label) return 1;
+    if (!a.label && b.label) return -1;
+    return 0;
+  });
 
   // Find starting index
   const startIdx = preselectedId != null
@@ -277,8 +283,9 @@ function LabelClipsTab({
 
   if (clipsQuery.isLoading) return <LoadingState />;
 
-  const labeledCount = currentIdx;
+  const reviewedCount = currentIdx;
   const totalCount = clips.length;
+  const unlabeledCount = clips.filter((c) => !c.label).length;
   const currentClip = clips[currentIdx];
   const allDone = currentIdx >= totalCount;
 
@@ -288,11 +295,16 @@ function LabelClipsTab({
       <div>
         <div className="flex items-center justify-between mb-2">
           <span className="text-sm font-medium text-text-primary">
-            {labeledCount} of {totalCount} labeled
+            {reviewedCount} of {totalCount} reviewed
+            {unlabeledCount > 0 && (
+              <span className="text-text-secondary font-normal">
+                {" "}({unlabeledCount} unlabeled)
+              </span>
+            )}
           </span>
           <span className="text-[12px] text-text-secondary">
             {totalCount > 0
-              ? `${Math.round((labeledCount / totalCount) * 100)}%`
+              ? `${Math.round((reviewedCount / totalCount) * 100)}%`
               : "—"}
           </span>
         </div>
@@ -300,7 +312,7 @@ function LabelClipsTab({
           <div
             className="h-full bg-accent transition-all"
             style={{
-              width: `${totalCount > 0 ? (labeledCount / totalCount) * 100 : 0}%`,
+              width: `${totalCount > 0 ? (reviewedCount / totalCount) * 100 : 0}%`,
             }}
           />
         </div>
@@ -318,7 +330,7 @@ function LabelClipsTab({
       ) : (
         <>
           {/* Video placeholder */}
-          <div className="bg-black rounded-xl aspect-video flex items-center justify-center">
+          <div className="bg-black rounded-xl aspect-video flex items-center justify-center relative">
             <div className="text-center">
               <Play size={48} className="text-white/30 mx-auto mb-2" />
               <p className="text-white/40 text-sm">
@@ -326,13 +338,57 @@ function LabelClipsTab({
                 {currentClip.duration_seconds?.toFixed(1) ?? "?"}s
                 {currentClip.zone && ` · ${currentClip.zone}`}
               </p>
+              {currentClip.clip_path && (
+                <p className="text-white/25 text-[11px] mt-1 truncate max-w-md mx-auto px-4">
+                  {currentClip.clip_path}
+                </p>
+              )}
+              <p className="text-white/30 text-[11px] mt-1">
+                Frames {currentClip.start_frame} – {currentClip.end_frame}
+              </p>
             </div>
           </div>
+
+          {/* Context metadata */}
+          {(currentClip.extraction_reason || currentClip.velocity_context || currentClip.pairwise_context) && (
+            <div className="flex flex-wrap gap-2">
+              {currentClip.extraction_reason && (
+                <span className="px-2.5 py-1 text-[11px] bg-surface border border-border rounded-lg text-text-secondary">
+                  {currentClip.extraction_reason}
+                </span>
+              )}
+              {currentClip.velocity_context && (
+                <span className="px-2.5 py-1 text-[11px] bg-surface border border-border rounded-lg text-text-secondary">
+                  {currentClip.velocity_context}
+                </span>
+              )}
+              {currentClip.pairwise_context && (
+                <span className="px-2.5 py-1 text-[11px] bg-surface border border-border rounded-lg text-text-secondary">
+                  {currentClip.pairwise_context}
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Existing label indicator */}
+          {currentClip.label && (
+            <div className="flex items-center justify-between bg-success/5 border border-success/20 rounded-xl px-4 py-3">
+              <div className="flex items-center gap-2">
+                <Check size={14} className="text-success" />
+                <span className="text-sm text-text-primary">
+                  Previously labeled: <span className="font-medium">{currentClip.label}</span>
+                </span>
+              </div>
+              <span className="text-[11px] text-text-secondary">
+                Select a class below to re-label
+              </span>
+            </div>
+          )}
 
           {/* Behavior buttons */}
           <div>
             <p className="text-sm font-medium text-text-primary mb-3">
-              What behavior is this?
+              {currentClip.label ? "Re-label this clip:" : "What behavior is this?"}
             </p>
             <div className="grid grid-cols-4 gap-2">
               {BEHAVIOR_CLASSES.map((b, i) => (
