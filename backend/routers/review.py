@@ -99,12 +99,18 @@ async def attention_count():
     ).fetchone()
     droppings_cnt = row["cnt"] if row else 0
 
+    row = conn.execute(
+        "SELECT COUNT(*) AS cnt FROM behaviors WHERE review_status = 'raw'"
+    ).fetchone()
+    behaviors_cnt = row["cnt"] if row else 0
+
     conn.close()
     return {
-        "total": qc + identity + droppings_cnt,
+        "total": qc + identity + droppings_cnt + behaviors_cnt,
         "identity": identity,
         "qc": qc,
         "droppings": droppings_cnt,
+        "behaviors": behaviors_cnt,
     }
 
 

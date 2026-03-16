@@ -10,6 +10,8 @@ import {
   reviewQCFlag,
   getDroppingsForReview,
   reviewDropping,
+  getBehaviorsForReview,
+  reviewBehavior,
 } from "../api/review";
 import { getFrameUrl } from "../api/videos";
 import { getPigeons } from "../api/pigeons";
@@ -56,6 +58,9 @@ export default function Review() {
   }
   if (type === "dropping") {
     return <DroppingReview />;
+  }
+  if (type === "behavior") {
+    return <BehaviorReview />;
   }
   return <ReviewQueue />;
 }
@@ -576,7 +581,131 @@ function DroppingReview() {
 }
 
 /* ================================================================
-   4. General Review Queue
+   4. Behavior Review
+   ================================================================ */
+function BehaviorReview() {
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const toast = useToast();
+
+  const behaviorsQuery = useQuery({
+    queryKey: ["behaviors-review"],
+    queryFn: () => getBehaviorsForReview("raw"),
+  });
+
+  const mutation = useMutation({
+    mutationFn: ({ id, action }: { id: number; action: "confirm" | "reject" }) =>
+      reviewBehavior({ behavior_id: id, action, reviewer: "lab_user" }),
+    onSuccess: (_data, variables) => {
+      toast.success(
+        variables.action === "confirm" ? "Behavior confirmed" : "Behavior rejected",
+      );
+      queryClient.invalidateQueries({ queryKey: ["behaviors-review"] });
+      queryClient.invalidateQueries({ queryKey: ["attention-count"] });
+    },
+    onError: () => {
+      toast.error("Failed to review behavior");
+    },
+  });
+
+  const behaviors = behaviorsQuery.data ?? [];
+
+  if (behaviorsQuery.isLoading) return <LoadingState />;
+
+  if (behaviorsQuery.isError) {
+    return (
+      <div className="text-center py-16 text-text-secondary text-sm">
+        Could not load behaviors. Please try refreshing.
+      </div>
+    );
+  }
+
+  if (behaviors.length === 0) {
+    return (
+      <div className="text-center py-16">
+        <div className="w-14 h-14 rounded-full bg-success/10 flex items-center justify-center mx-auto mb-4">
+          <Check size={28} className="text-success" />
+        </div>
+        <p className="text-sm font-medium text-text-primary">All behaviors reviewed!</p>
+        <p className="text-sm text-text-secondary mt-1">No pending behavior detections.</p>
+        <button
+          onClick={() => navigate("/review")}
+          className="mt-4 text-sm text-accent hover:text-accent/80 font-medium transition-colors"
+        >
+          ← Back to Review Queue
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-3xl space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-bold text-text-primary">Behavior Review</h1>
+        <span className="text-sm text-text-secondary">
+          {behaviors.length} pending
+        </span>
+      </div>
+
+      <div className="bg-surface border border-border rounded-xl divide-y divide-border">
+        {behaviors.map((b) => (
+          <div
+            key={b.id}
+            className="flex items-center justify-between gap-4 px-5 py-4"
+          >
+            <div className="flex items-start gap-3 min-w-0 flex-1">
+              <span className="text-base shrink-0 mt-0.5">🎬</span>
+              <div className="min-w-0">
+                <p className="text-sm text-text-primary">
+                  <span className="font-medium">{b.pigeon_id}</span>
+                  {" — "}
+                  <span className="capitalize">{b.behavior.replace(/_/g, " ")}</span>
+                </p>
+                <div className="flex items-center gap-3 mt-1">
+                  {b.duration_seconds != null && (
+                    <span className="text-[11px] text-text-secondary">
+                      {b.duration_seconds}s
+                    </span>
+                  )}
+                  {b.confidence != null && (
+                    <span className="text-[11px] text-text-secondary">
+                      {Math.round(b.confidence * 100)}% confidence
+                    </span>
+                  )}
+                  {b.zone && (
+                    <span className="text-[11px] text-text-secondary">
+                      {b.zone}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => mutation.mutate({ id: b.id, action: "confirm" })}
+                disabled={mutation.isPending}
+                className="flex items-center gap-1 px-3 py-1.5 text-[12px] font-medium text-white bg-success rounded-lg hover:bg-success/90 transition-colors disabled:opacity-50"
+              >
+                <Check size={12} />
+                Confirm
+              </button>
+              <button
+                onClick={() => mutation.mutate({ id: b.id, action: "reject" })}
+                disabled={mutation.isPending}
+                className="px-3 py-1.5 text-[12px] font-medium border border-border rounded-lg hover:bg-bg transition-colors disabled:opacity-50"
+              >
+                Reject
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ================================================================
+   5. General Review Queue
    ================================================================ */
 function ReviewQueue() {
   const navigate = useNavigate();
@@ -626,6 +755,15 @@ function ReviewQueue() {
       description:
         "Quality control issues flagged during processing",
       action: () => navigate("/review?type=qc"),
+    },
+    {
+      key: "behaviors",
+      title: "Behaviors to Review",
+      icon: "🎬",
+      count: counts?.behaviors ?? 0,
+      description:
+        "Behavior detections that need confirmation",
+      action: () => navigate("/review?type=behavior"),
     },
     {
       key: "droppings",
