@@ -8,6 +8,7 @@ import {
   reviewIdentity,
   getQCFlags,
   reviewQCFlag,
+  batchResolveQCFlags,
   getDroppingsForReview,
   reviewDropping,
   getBehaviorsForReview,
@@ -318,16 +319,13 @@ function QCReview({ videoId }: { videoId?: number }) {
   });
 
   const batchResolveMutation = useMutation({
-    mutationFn: async (flagIds: number[]) => {
-      for (const id of flagIds) {
-        await reviewQCFlag({
-          flag_id: id,
-          action: "resolve",
-          resolved_action: "accepted",
-          reviewer: "lab_user",
-        });
-      }
-    },
+    mutationFn: (flagIds: number[]) =>
+      batchResolveQCFlags({
+        flag_ids: flagIds,
+        action: "resolve",
+        resolved_action: "accepted",
+        reviewer: "lab_user",
+      }),
     onSuccess: () => {
       toast.success("All low-severity flags resolved");
       queryClient.invalidateQueries({ queryKey: ["qc-flags", videoId] });

@@ -44,6 +44,10 @@ export function reviewQCFlag(payload: QCFlagReviewPayload) {
   return post<QCFlag>("/review/qc-flag", payload);
 }
 
+export function batchResolveQCFlags(payload: { flag_ids: number[]; action?: string; resolved_action?: string; reviewer?: string }) {
+  return post<QCFlag[]>("/review/qc-flags/batch-resolve", payload);
+}
+
 // --- Droppings List ---
 
 export function getDroppingsForReview(status = "raw", limit = 50) {

@@ -25,6 +25,13 @@ class QCFlagReviewRequest(BaseModel):
     notes: str = ""
 
 
+class QCFlagBatchResolveRequest(BaseModel):
+    flag_ids: list[int]
+    action: str = "resolve"
+    resolved_action: str = "accepted"
+    reviewer: str = ""
+
+
 class MaskEditRequest(BaseModel):
     video_id: int
     frame_idx: int
@@ -321,6 +328,30 @@ async def review_qc_flag(body: QCFlagReviewRequest):
     updated = conn.execute("SELECT * FROM qc_flags WHERE id = ?", (body.flag_id,)).fetchone()
     conn.close()
     return dict(updated)
+
+
+@router.post("/qc-flags/batch-resolve")
+async def batch_resolve_qc_flags(body: QCFlagBatchResolveRequest):
+    if not body.flag_ids:
+        raise HTTPException(status_code=400, detail="flag_ids must not be empty")
+
+    conn = get_connection()
+    placeholders = ",".join("?" for _ in body.flag_ids)
+    resolved_action = body.resolved_action or body.action
+
+    conn.execute(
+        f"UPDATE qc_flags SET review_status = 'resolved', resolved_action = ? "
+        f"WHERE id IN ({placeholders})",
+        [resolved_action] + body.flag_ids,
+    )
+    conn.commit()
+
+    rows = conn.execute(
+        f"SELECT * FROM qc_flags WHERE id IN ({placeholders})",
+        body.flag_ids,
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 
 # --- Mask edit ---
