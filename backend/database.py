@@ -4,6 +4,11 @@ from pathlib import Path
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "pigeonlab.db"
 
 
+def get_db_path() -> str:
+    """Return the database file path as a string (used by aiosqlite routers)."""
+    return str(DB_PATH)
+
+
 def get_connection() -> sqlite3.Connection:
     conn = sqlite3.connect(str(DB_PATH))
     conn.execute("PRAGMA journal_mode=WAL")
