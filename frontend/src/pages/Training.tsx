@@ -724,7 +724,9 @@ function TrainModelTab() {
    ================================================================ */
 function ModelHistoryTab() {
   const queryClient = useQueryClient();
-  const [confirmReinfer, setConfirmReinfer] = useState(false);
+  const [showReinfer, setShowReinfer] = useState(false);
+  const [skipAlreadyInferred, setSkipAlreadyInferred] = useState(true);
+  const [onlyApproved, setOnlyApproved] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [showComparison, setShowComparison] = useState(false);
 
@@ -740,11 +742,12 @@ function ModelHistoryTab() {
   });
 
   const reinferMutation = useMutation({
-    mutationFn: () => reinferVideos({}),
-    onSuccess: () => setConfirmReinfer(false),
+    mutationFn: (opts: { skip_already_inferred: boolean; only_approved_videos: boolean }) =>
+      reinferVideos(opts),
   });
 
   const models = modelsQuery.data ?? [];
+  const activeModel = models.find((m) => m.is_active) ?? null;
 
   function toggleSelect(id: number) {
     setSelected((prev) => {
@@ -836,52 +839,126 @@ function ModelHistoryTab() {
 
       {/* Reinfer */}
       <div>
-        {confirmReinfer ? (
-          <div className="bg-warning/5 border border-warning/30 rounded-xl p-4 flex items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <AlertTriangle size={16} className="text-warning shrink-0" />
-              <span className="text-sm text-text-primary">
-                This will re-run inference on all videos with the active model. Continue?
-              </span>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
+        {showReinfer ? (
+          <div className="bg-surface border border-border rounded-xl p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-text-primary">
+                Re-Infer Videos
+              </h3>
               <button
-                onClick={() => setConfirmReinfer(false)}
-                className="px-3 py-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors"
+                onClick={() => setShowReinfer(false)}
+                className="p-1 rounded-md hover:bg-bg text-text-secondary hover:text-text-primary transition-colors"
               >
-                Cancel
+                <X size={16} />
               </button>
+            </div>
+
+            {/* Active model info */}
+            {activeModel && (
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-text-secondary">Model:</span>
+                <span className="font-medium text-text-primary">
+                  {activeModel.version ?? activeModel.model_name}
+                </span>
+                <span className="px-2 py-0.5 bg-success/10 text-success text-[11px] font-medium rounded-full">
+                  Active
+                </span>
+              </div>
+            )}
+            {!activeModel && (
+              <div className="flex items-center gap-2 text-sm text-warning">
+                <AlertTriangle size={14} />
+                No active model set. Activate a model first.
+              </div>
+            )}
+
+            {/* Options */}
+            <div className="space-y-2.5">
+              <label className="flex items-center gap-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={skipAlreadyInferred}
+                  onChange={(e) => setSkipAlreadyInferred(e.target.checked)}
+                  className="w-4 h-4 rounded border-border text-accent focus:ring-accent/30"
+                />
+                <div>
+                  <span className="text-sm text-text-primary">
+                    Skip videos already inferred with this model
+                  </span>
+                  <p className="text-[11px] text-text-secondary">
+                    Only process videos that haven't been analyzed by the active model
+                  </p>
+                </div>
+              </label>
+              <label className="flex items-center gap-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={onlyApproved}
+                  onChange={(e) => setOnlyApproved(e.target.checked)}
+                  className="w-4 h-4 rounded border-border text-accent focus:ring-accent/30"
+                />
+                <div>
+                  <span className="text-sm text-text-primary">
+                    Only approved videos
+                  </span>
+                  <p className="text-[11px] text-text-secondary">
+                    Restrict to videos that have passed QC review
+                  </p>
+                </div>
+              </label>
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex items-center gap-3 pt-1">
               <button
-                onClick={() => reinferMutation.mutate()}
-                disabled={reinferMutation.isPending}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-warning text-white text-sm font-medium rounded-lg hover:bg-warning/90 transition-colors disabled:opacity-50"
+                onClick={() =>
+                  reinferMutation.mutate({
+                    skip_already_inferred: skipAlreadyInferred,
+                    only_approved_videos: onlyApproved,
+                  })
+                }
+                disabled={reinferMutation.isPending || !activeModel}
+                className="flex items-center gap-1.5 px-4 py-2 bg-warning text-white text-sm font-medium rounded-lg hover:bg-warning/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {reinferMutation.isPending && (
                   <Loader2 size={14} className="animate-spin" />
                 )}
-                Yes, Re-Infer All
+                Start Re-Inference
+              </button>
+              <button
+                onClick={() => setShowReinfer(false)}
+                className="px-3 py-2 text-sm text-text-secondary hover:text-text-primary transition-colors"
+              >
+                Cancel
               </button>
             </div>
+
+            {/* Result */}
+            {reinferMutation.isSuccess && reinferMutation.data && (
+              <div className="flex items-center gap-2 bg-success/5 border border-success/20 rounded-lg px-4 py-3">
+                <Check size={14} className="text-success shrink-0" />
+                <span className="text-sm text-text-primary">
+                  Re-inference started: {reinferMutation.data.videos_eligible} videos
+                  eligible, {reinferMutation.data.videos_skipped} skipped.
+                </span>
+              </div>
+            )}
+            {reinferMutation.isError && (
+              <p className="text-sm text-error">
+                Failed to start re-inference. Please try again.
+              </p>
+            )}
           </div>
         ) : (
           <button
-            onClick={() => setConfirmReinfer(true)}
+            onClick={() => {
+              reinferMutation.reset();
+              setShowReinfer(true);
+            }}
             className="px-4 py-2 border border-border rounded-lg text-sm font-medium text-text-primary hover:bg-bg transition-colors"
           >
             Apply to All Videos
           </button>
-        )}
-
-        {reinferMutation.isSuccess && reinferMutation.data && (
-          <p className="text-sm text-success mt-2">
-            Re-inference started: {reinferMutation.data.videos_eligible} videos
-            eligible, {reinferMutation.data.videos_skipped} skipped.
-          </p>
-        )}
-        {reinferMutation.isError && (
-          <p className="text-sm text-error mt-2">
-            Failed to start re-inference.
-          </p>
         )}
       </div>
     </div>
