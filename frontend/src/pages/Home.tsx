@@ -1,12 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { getStatsToday } from "../api/stats";
 import { getAttentionItems } from "../api/stats";
 import { getStatsSummary } from "../api/stats";
 import { getActivity } from "../api/stats";
 import LoadingState from "../components/ui/LoadingState";
-import EmptyState from "../components/ui/EmptyState";
 
 const severityDots: Record<string, string> = {
   critical: "bg-error",
@@ -49,13 +48,50 @@ export default function Home() {
 
   if (isEmpty) {
     return (
-      <EmptyState
-        icon="🕊️"
-        title="No videos processed yet"
-        description="Add some videos to get started with PigeonLab."
-        actionLabel="Go to Videos"
-        onAction={() => navigate("/videos")}
-      />
+      <div className="max-w-2xl mx-auto py-12 space-y-8">
+        <div className="text-center space-y-2">
+          <h1 className="text-2xl font-bold text-text-primary">
+            Welcome to PigeonLab
+          </h1>
+          <p className="text-sm text-text-secondary leading-relaxed max-w-md mx-auto">
+            Get started by adding your pigeon videos. PigeonLab will detect,
+            track, and analyze your pigeons automatically.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {[
+            {
+              step: 1,
+              title: "Register your pigeons",
+              to: "/pigeons",
+            },
+            {
+              step: 2,
+              title: "Add videos for processing",
+              to: "/videos",
+            },
+            {
+              step: 3,
+              title: "Review and analyze results",
+              to: "/insights",
+            },
+          ].map(({ step, title, to }) => (
+            <Link
+              key={step}
+              to={to}
+              className="bg-surface border border-border rounded-xl p-5 space-y-3 hover:border-accent/50 hover:shadow-sm transition-all group"
+            >
+              <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-accent/10 text-accent text-sm font-bold">
+                {step}
+              </span>
+              <p className="text-sm font-medium text-text-primary group-hover:text-accent transition-colors">
+                {title}
+              </p>
+            </Link>
+          ))}
+        </div>
+      </div>
     );
   }
 
