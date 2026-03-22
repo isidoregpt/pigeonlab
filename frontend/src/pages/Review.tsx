@@ -20,6 +20,7 @@ import { getAttentionCount } from "../api/stats";
 import type { VideoAssignment, QCFlag } from "../types";
 import StatusBadge from "../components/ui/StatusBadge";
 import LoadingState from "../components/ui/LoadingState";
+import { formatDuration } from "../utils/formatTime";
 import { useToast } from "../components/ui/Toast";
 import { usePageTitle } from "../hooks/usePageTitle";
 
@@ -662,7 +663,7 @@ function BehaviorReview() {
                 <div className="flex items-center gap-3 mt-1">
                   {b.duration_seconds != null && (
                     <span className="text-[11px] text-text-secondary">
-                      {b.duration_seconds}s
+                      {formatDuration(b.duration_seconds)}
                     </span>
                   )}
                   {b.confidence != null && (

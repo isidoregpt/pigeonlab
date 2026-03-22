@@ -6,6 +6,7 @@ import { getAttentionItems } from "../api/stats";
 import { getStatsSummary } from "../api/stats";
 import { getActivity } from "../api/stats";
 import LoadingState from "../components/ui/LoadingState";
+import { formatRelativeTime } from "../utils/formatTime";
 
 const severityDots: Record<string, string> = {
   critical: "bg-error",
@@ -200,7 +201,7 @@ export default function Home() {
                 </div>
                 {item.timestamp && (
                   <span className="text-[11px] text-text-secondary whitespace-nowrap shrink-0">
-                    {formatTimestamp(item.timestamp)}
+                    {formatRelativeTime(item.timestamp)}
                   </span>
                 )}
               </div>
@@ -235,19 +236,3 @@ function zoneColor(index: number): string {
   return ZONE_COLORS[index] ?? "bg-gray-200";
 }
 
-function formatTimestamp(ts: string): string {
-  try {
-    const d = new Date(ts);
-    const now = new Date();
-    const diffMs = now.getTime() - d.getTime();
-    const diffMin = Math.floor(diffMs / 60_000);
-    if (diffMin < 1) return "Just now";
-    if (diffMin < 60) return `${diffMin}m ago`;
-    const diffHr = Math.floor(diffMin / 60);
-    if (diffHr < 24) return `${diffHr}h ago`;
-    const diffDay = Math.floor(diffHr / 24);
-    return `${diffDay}d ago`;
-  } catch {
-    return ts;
-  }
-}

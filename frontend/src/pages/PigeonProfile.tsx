@@ -21,24 +21,7 @@ import {
 import { usePageTitle } from "../hooks/usePageTitle";
 import HeatmapCanvas from "../components/ui/HeatmapCanvas";
 import LoadingState from "../components/ui/LoadingState";
-
-function formatRelativeTime(dateStr: string): string {
-  const date = new Date(dateStr);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffSecs = Math.floor(diffMs / 1000);
-  const diffMins = Math.floor(diffSecs / 60);
-  const diffHours = Math.floor(diffMins / 60);
-  const diffDays = Math.floor(diffHours / 24);
-
-  if (diffDays > 30) {
-    return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-  }
-  if (diffDays > 0) return `${diffDays}d ago`;
-  if (diffHours > 0) return `${diffHours}h ago`;
-  if (diffMins > 0) return `${diffMins}m ago`;
-  return "just now";
-}
+import { formatRelativeTime, formatDuration } from "../utils/formatTime";
 
 const ZONE_COLORS = [
   "#0D9488", // accent
@@ -419,7 +402,7 @@ export default function PigeonProfile() {
                 />
                 <Tooltip
                   formatter={(value: number) => [
-                    `${Math.round(value)}s (${Math.round(value / 60)}m)`,
+                    formatDuration(value),
                     "Duration",
                   ]}
                   contentStyle={{

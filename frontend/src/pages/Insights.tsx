@@ -23,6 +23,7 @@ import { getSessions } from "../api/videos";
 import { usePageTitle } from "../hooks/usePageTitle";
 import HeatmapCanvas from "../components/ui/HeatmapCanvas";
 import { useToast } from "../components/ui/Toast";
+import { formatDuration } from "../utils/formatTime";
 
 type Period = "day" | "week" | "month" | "all";
 const PERIOD_LABELS: Record<Period, string> = {
@@ -381,7 +382,7 @@ export default function Insights() {
                       border: "1px solid #E7E5E4",
                     }}
                     formatter={(value: number, name: string) => [
-                      `${Math.round(value)}s`,
+                      formatDuration(value),
                       name.replace(/_/g, " "),
                     ]}
                   />
@@ -604,7 +605,7 @@ export default function Insights() {
                               }
                             >
                               {diff.duration_diff > 0 ? "↑" : diff.duration_diff < 0 ? "↓" : "–"}
-                              {Math.abs(diff.duration_diff)}s
+                              {formatDuration(Math.abs(diff.duration_diff))}
                             </span>
                             {" "}
                             <span className="text-text-secondary/60">
