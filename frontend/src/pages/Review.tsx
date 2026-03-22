@@ -237,7 +237,7 @@ function IdentityReview({ videoId }: { videoId: number }) {
           ))}
           {/* New pigeon placeholder */}
           <button
-            onClick={() => alert("Feature coming soon")}
+            onClick={() => toast.success("New Pigeon registration coming soon — this feature is in development")}
             className="border-2 border-dashed border-border rounded-xl p-4 text-center hover:border-accent/50 transition-colors"
           >
             <p className="text-sm font-medium text-text-secondary">

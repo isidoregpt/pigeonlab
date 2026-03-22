@@ -22,6 +22,7 @@ import { getPigeons } from "../api/pigeons";
 import { getSessions } from "../api/videos";
 import { usePageTitle } from "../hooks/usePageTitle";
 import HeatmapCanvas from "../components/ui/HeatmapCanvas";
+import { useToast } from "../components/ui/Toast";
 
 type Period = "day" | "week" | "month" | "all";
 const PERIOD_LABELS: Record<Period, string> = {
@@ -150,6 +151,7 @@ function SocialMap({
    ================================================================ */
 export default function Insights() {
   usePageTitle("Insights");
+  const toast = useToast();
   const [period, setPeriod] = useState<Period>("week");
   const [pigeonFilter, setPigeonFilter] = useState("all");
   const [periodOpen, setPeriodOpen] = useState(false);
@@ -663,7 +665,7 @@ export default function Insights() {
       {/* ===== 6. Export Buttons ===== */}
       <div className="flex items-center gap-3">
         <button
-          onClick={() => alert("PDF export coming soon")}
+          onClick={() => toast.success("PDF export coming soon — this feature is in development")}
           className="flex items-center gap-1.5 px-4 py-2 border border-border rounded-lg text-sm font-medium text-text-primary hover:bg-bg transition-colors"
         >
           <Download size={14} />
