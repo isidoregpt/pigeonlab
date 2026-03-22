@@ -122,7 +122,7 @@ function IdentityReview({ videoId }: { videoId: number }) {
     }
   }
 
-  if (assignmentsQuery.isLoading || pigeonsQuery.isLoading) return <LoadingState />;
+  if (assignmentsQuery.isLoading || pigeonsQuery.isLoading) return <LoadingState variant="list" />;
 
   if (assignmentsQuery.isError) {
     return (
@@ -340,7 +340,7 @@ function QCReview({ videoId }: { videoId?: number }) {
     (f) => f.severity === "low" || f.severity === null,
   );
 
-  if (flagsQuery.isLoading) return <LoadingState />;
+  if (flagsQuery.isLoading) return <LoadingState variant="list" />;
 
   if (flagsQuery.isError) {
     return (
@@ -487,7 +487,7 @@ function DroppingReview() {
 
   const droppings = droppingsQuery.data ?? [];
 
-  if (droppingsQuery.isLoading) return <LoadingState />;
+  if (droppingsQuery.isLoading) return <LoadingState variant="list" />;
 
   if (droppingsQuery.isError) {
     return (
@@ -608,7 +608,7 @@ function BehaviorReview() {
 
   const behaviors = behaviorsQuery.data ?? [];
 
-  if (behaviorsQuery.isLoading) return <LoadingState />;
+  if (behaviorsQuery.isLoading) return <LoadingState variant="list" />;
 
   if (behaviorsQuery.isError) {
     return (
@@ -719,7 +719,7 @@ function ReviewQueue() {
     enabled: (countQuery.data?.identity ?? 0) > 0,
   });
 
-  if (countQuery.isLoading) return <LoadingState />;
+  if (countQuery.isLoading) return <LoadingState variant="list" />;
 
   if (countQuery.isError) {
     return (

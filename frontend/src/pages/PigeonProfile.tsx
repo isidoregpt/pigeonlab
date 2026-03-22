@@ -20,6 +20,7 @@ import {
 } from "../api/pigeons";
 import { usePageTitle } from "../hooks/usePageTitle";
 import HeatmapCanvas from "../components/ui/HeatmapCanvas";
+import LoadingState from "../components/ui/LoadingState";
 
 function formatRelativeTime(dateStr: string): string {
   const date = new Date(dateStr);
@@ -145,6 +146,8 @@ export default function PigeonProfile() {
     setEditNotes(pigeon?.notes ?? "");
     setEditing(true);
   }
+
+  if (profileQuery.isLoading) return <LoadingState variant="profile" />;
 
   // Top-level error for profile
   if (profileQuery.isError) {

@@ -122,7 +122,7 @@ export default function VideoDetail() {
 
   // --- Render ---
 
-  if (videoQuery.isLoading) return <LoadingState />;
+  if (videoQuery.isLoading) return <LoadingState variant="detail" />;
 
   if (videoQuery.isError || !videoQuery.data) {
     return (
