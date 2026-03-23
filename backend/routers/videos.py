@@ -4,9 +4,10 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from database import get_db
+from utils import get_default_reviewer
 
 router = APIRouter()
 
@@ -32,7 +33,7 @@ class ReviewStatus(str, Enum):
 
 class ReviewUpdate(BaseModel):
     review_status: ReviewStatus
-    reviewer: str
+    reviewer: str = Field(default_factory=get_default_reviewer)
 
 
 # --- Helpers ---

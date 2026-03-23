@@ -1,9 +1,10 @@
 from enum import Enum
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from database import get_db
+from utils import get_default_reviewer
 
 
 class QCFlagAction(str, Enum):
@@ -29,14 +30,14 @@ class IdentityReviewRequest(BaseModel):
     pigeon_id: str = ""
     old_pigeon_id: str = ""
     new_pigeon_id: str = ""
-    reviewer: str = ""
+    reviewer: str = Field(default_factory=get_default_reviewer)
 
 
 class QCFlagReviewRequest(BaseModel):
     flag_id: int
     action: QCFlagAction
     resolved_action: ResolvedAction = ResolvedAction.empty
-    reviewer: str = ""
+    reviewer: str = Field(default_factory=get_default_reviewer)
     notes: str = ""
 
 
@@ -44,7 +45,7 @@ class QCFlagBatchResolveRequest(BaseModel):
     flag_ids: list[int]
     action: QCFlagAction = QCFlagAction.resolve
     resolved_action: ResolvedAction = ResolvedAction.accepted
-    reviewer: str = ""
+    reviewer: str = Field(default_factory=get_default_reviewer)
 
 
 class MaskEditRequest(BaseModel):
@@ -53,7 +54,7 @@ class MaskEditRequest(BaseModel):
     pigeon_id: str = ""
     edit_type: str = "mask"
     mask_data: str = ""
-    editor: str = ""
+    editor: str = Field(default_factory=get_default_reviewer)
     details: str = ""
 
 
@@ -62,7 +63,7 @@ class TrackMergeRequest(BaseModel):
     source_obj_id: int
     target_obj_id: int
     from_frame: int = 0
-    editor: str = ""
+    editor: str = Field(default_factory=get_default_reviewer)
     notes: str = ""
 
 
@@ -70,20 +71,20 @@ class TrackSplitRequest(BaseModel):
     video_id: int
     obj_id: int
     at_frame: int
-    editor: str = ""
+    editor: str = Field(default_factory=get_default_reviewer)
     notes: str = ""
 
 
 class BehaviorReviewRequest(BaseModel):
     behavior_id: int
     action: str
-    reviewer: str = ""
+    reviewer: str = Field(default_factory=get_default_reviewer)
 
 
 class DroppingReviewRequest(BaseModel):
     dropping_id: int
     action: str
-    reviewer: str = ""
+    reviewer: str = Field(default_factory=get_default_reviewer)
 
 
 # --- Helpers ---

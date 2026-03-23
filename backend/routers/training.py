@@ -1,10 +1,11 @@
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 import uuid
 import json
 import aiosqlite
 from database import get_db_path
+from utils import get_default_reviewer
 from datetime import datetime
 
 router = APIRouter()
@@ -83,7 +84,7 @@ async def get_clips(
 class LabelPayload(BaseModel):
     clip_id: int
     behavior_class: str
-    labeler: str = "lab_user"
+    labeler: str = Field(default_factory=get_default_reviewer)
     split: str = "train"
     notes: Optional[str] = None
 
