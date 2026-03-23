@@ -42,7 +42,12 @@ export default function RegisterPigeonModal({ onClose, onSuccess }: RegisterPige
     return () => document.removeEventListener("keydown", handleKey);
   }, [onClose]);
 
-  const canSubmit = name.trim().length > 0 && !submitting;
+  const PIGEON_ID_RE = /^[a-zA-Z0-9_-]+$/;
+  const nameError =
+    name.length > 0 && !PIGEON_ID_RE.test(name.trim())
+      ? "Only letters, numbers, hyphens, and underscores allowed."
+      : null;
+  const canSubmit = name.trim().length > 0 && !nameError && !submitting;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -103,8 +108,15 @@ export default function RegisterPigeonModal({ onClose, onSuccess }: RegisterPige
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. P-01, Blue-Band"
-              className="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text-primary placeholder:text-text-secondary/40 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-colors"
+              className={`w-full px-3 py-2 bg-bg border rounded-lg text-sm text-text-primary placeholder:text-text-secondary/40 focus:outline-none focus:ring-2 transition-colors ${
+                nameError
+                  ? "border-error focus:ring-error/30 focus:border-error"
+                  : "border-border focus:ring-accent/30 focus:border-accent"
+              }`}
             />
+            {nameError && (
+              <p className="text-[12px] text-error mt-1">{nameError}</p>
+            )}
           </div>
 
           <div>

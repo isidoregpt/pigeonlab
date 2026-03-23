@@ -483,7 +483,15 @@ function TrainModelTab() {
     });
   }
 
+  const configErrors = {
+    epochs: epochs < 1 || epochs > 500 ? "Must be 1–500." : null,
+    batchSize: batchSize < 1 || batchSize > 256 ? "Must be 1–256." : null,
+    lr: lr < 0.00001 || lr > 1 ? "Must be 0.00001–1.0." : null,
+  };
+  const hasConfigError = Object.values(configErrors).some(Boolean);
+
   function launch() {
+    if (hasConfigError) return;
     trainMutation.mutate({
       backbone,
       epochs,
@@ -601,9 +609,16 @@ function TrainModelTab() {
               min={1}
               max={500}
               value={epochs}
-              onChange={(e) => setEpochs(Number(e.target.value) || 50)}
-              className="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-colors"
+              onChange={(e) => setEpochs(Number(e.target.value) || 0)}
+              className={`w-full px-3 py-2 bg-bg border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 transition-colors ${
+                configErrors.epochs
+                  ? "border-error focus:ring-error/30 focus:border-error"
+                  : "border-border focus:ring-accent/30 focus:border-accent"
+              }`}
             />
+            {configErrors.epochs && (
+              <p className="text-[12px] text-error mt-1">{configErrors.epochs}</p>
+            )}
           </div>
 
           <div>
@@ -615,9 +630,16 @@ function TrainModelTab() {
               min={1}
               max={256}
               value={batchSize}
-              onChange={(e) => setBatchSize(Number(e.target.value) || 16)}
-              className="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-colors"
+              onChange={(e) => setBatchSize(Number(e.target.value) || 0)}
+              className={`w-full px-3 py-2 bg-bg border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 transition-colors ${
+                configErrors.batchSize
+                  ? "border-error focus:ring-error/30 focus:border-error"
+                  : "border-border focus:ring-accent/30 focus:border-accent"
+              }`}
             />
+            {configErrors.batchSize && (
+              <p className="text-[12px] text-error mt-1">{configErrors.batchSize}</p>
+            )}
           </div>
 
           <div>
@@ -630,9 +652,16 @@ function TrainModelTab() {
               min={0.00001}
               max={1}
               value={lr}
-              onChange={(e) => setLr(Number(e.target.value) || 0.001)}
-              className="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-colors"
+              onChange={(e) => setLr(Number(e.target.value) || 0)}
+              className={`w-full px-3 py-2 bg-bg border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 transition-colors ${
+                configErrors.lr
+                  ? "border-error focus:ring-error/30 focus:border-error"
+                  : "border-border focus:ring-accent/30 focus:border-accent"
+              }`}
             />
+            {configErrors.lr && (
+              <p className="text-[12px] text-error mt-1">{configErrors.lr}</p>
+            )}
           </div>
         </div>
 
@@ -678,7 +707,7 @@ function TrainModelTab() {
       <div className="space-y-3">
         <button
           onClick={launch}
-          disabled={trainMutation.isPending || selectedClasses.size === 0}
+          disabled={trainMutation.isPending || selectedClasses.size === 0 || hasConfigError}
           className="flex items-center gap-2 px-5 py-2.5 bg-accent text-white text-sm font-medium rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {trainMutation.isPending ? (

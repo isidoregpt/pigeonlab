@@ -181,8 +181,12 @@ export default function PigeonProfile() {
                   type="text"
                   value={editMarkers}
                   onChange={(e) => setEditMarkers(e.target.value)}
+                  maxLength={200}
                   className="w-full max-w-md px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-colors"
                 />
+                <p className="text-[11px] text-text-secondary/60 mt-1">
+                  {editMarkers.length}/200
+                </p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-text-primary mb-1">
