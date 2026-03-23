@@ -2,7 +2,7 @@ from datetime import date, timedelta
 
 from fastapi import APIRouter, Query
 
-from database import get_connection
+from database import get_db
 
 router = APIRouter()
 
@@ -20,26 +20,25 @@ async def insights_heatmap(
     pigeons: str = Query("all"),
     period: str = Query("week"),
 ):
-    conn = get_connection()
-    period_sql, params = _period_clause(period)
+    with get_db() as conn:
+        period_sql, params = _period_clause(period)
 
-    pigeon_sql = ""
-    if pigeons != "all":
-        ids = [p.strip() for p in pigeons.split(",") if p.strip()]
-        if ids:
-            placeholders = ",".join("?" * len(ids))
-            pigeon_sql = f"AND f.pigeon_id IN ({placeholders})"
-            params.extend(ids)
+        pigeon_sql = ""
+        if pigeons != "all":
+            ids = [p.strip() for p in pigeons.split(",") if p.strip()]
+            if ids:
+                placeholders = ",".join("?" * len(ids))
+                pigeon_sql = f"AND f.pigeon_id IN ({placeholders})"
+                params.extend(ids)
 
-    rows = conn.execute(
-        f"""SELECT f.centroid_x, f.centroid_y
-            FROM features f
-            JOIN videos v ON f.video_id = v.video_id
-            WHERE f.centroid_x IS NOT NULL AND f.centroid_y IS NOT NULL
-              {period_sql} {pigeon_sql}""",
-        params,
-    ).fetchall()
-    conn.close()
+        rows = conn.execute(
+            f"""SELECT f.centroid_x, f.centroid_y
+                FROM features f
+                JOIN videos v ON f.video_id = v.video_id
+                WHERE f.centroid_x IS NOT NULL AND f.centroid_y IS NOT NULL
+                  {period_sql} {pigeon_sql}""",
+            params,
+        ).fetchall()
 
     grid_w, grid_h = 50, 50
     grid = [[0.0] * grid_w for _ in range(grid_h)]
@@ -66,19 +65,18 @@ async def insights_heatmap(
 
 @router.get("/behaviors")
 async def insights_behaviors(period: str = Query("week")):
-    conn = get_connection()
-    period_sql, params = _period_clause(period)
+    with get_db() as conn:
+        period_sql, params = _period_clause(period)
 
-    rows = conn.execute(
-        f"""SELECT b.pigeon_id, b.behavior,
-                   SUM(b.duration_seconds) AS total_dur, COUNT(*) AS cnt
-            FROM behaviors b
-            JOIN videos v ON b.video_id = v.video_id
-            WHERE 1=1 {period_sql}
-            GROUP BY b.pigeon_id, b.behavior""",
-        params,
-    ).fetchall()
-    conn.close()
+        rows = conn.execute(
+            f"""SELECT b.pigeon_id, b.behavior,
+                       SUM(b.duration_seconds) AS total_dur, COUNT(*) AS cnt
+                FROM behaviors b
+                JOIN videos v ON b.video_id = v.video_id
+                WHERE 1=1 {period_sql}
+                GROUP BY b.pigeon_id, b.behavior""",
+            params,
+        ).fetchall()
 
     pigeons: dict[str, dict[str, dict]] = {}
     for row in rows:
@@ -93,22 +91,21 @@ async def insights_behaviors(period: str = Query("week")):
 
 @router.get("/pairwise")
 async def insights_pairwise(period: str = Query("week")):
-    conn = get_connection()
-    period_sql, params = _period_clause(period)
+    with get_db() as conn:
+        period_sql, params = _period_clause(period)
 
-    rows = conn.execute(
-        f"""SELECT p.pigeon_a, p.pigeon_b,
-                   AVG(p.distance_mm) AS avg_dist,
-                   COUNT(*) AS prox_events,
-                   COUNT(DISTINCT p.frame_idx) AS frame_count
-            FROM pairwise p
-            JOIN videos v ON p.video_id = v.video_id
-            WHERE 1=1 {period_sql}
-            GROUP BY p.pigeon_a, p.pigeon_b
-            ORDER BY avg_dist ASC""",
-        params,
-    ).fetchall()
-    conn.close()
+        rows = conn.execute(
+            f"""SELECT p.pigeon_a, p.pigeon_b,
+                       AVG(p.distance_mm) AS avg_dist,
+                       COUNT(*) AS prox_events,
+                       COUNT(DISTINCT p.frame_idx) AS frame_count
+                FROM pairwise p
+                JOIN videos v ON p.video_id = v.video_id
+                WHERE 1=1 {period_sql}
+                GROUP BY p.pigeon_a, p.pigeon_b
+                ORDER BY avg_dist ASC""",
+            params,
+        ).fetchall()
 
     # Estimate duration from frame count using average fps
     pairs = []
@@ -126,39 +123,38 @@ async def insights_pairwise(period: str = Query("week")):
 
 @router.get("/droppings")
 async def insights_droppings(period: str = Query("week")):
-    conn = get_connection()
-    period_sql, params = _period_clause(period)
+    with get_db() as conn:
+        period_sql, params = _period_clause(period)
 
-    # Total count
-    row = conn.execute(
-        f"""SELECT COUNT(*) AS cnt FROM droppings d
-            JOIN videos v ON d.video_id = v.video_id
-            WHERE 1=1 {period_sql}""",
-        params,
-    ).fetchone()
-    total = row["cnt"] if row else 0
+        # Total count
+        row = conn.execute(
+            f"""SELECT COUNT(*) AS cnt FROM droppings d
+                JOIN videos v ON d.video_id = v.video_id
+                WHERE 1=1 {period_sql}""",
+            params,
+        ).fetchone()
+        total = row["cnt"] if row else 0
 
-    # By zone
-    rows = conn.execute(
-        f"""SELECT COALESCE(d.zone, 'unknown') AS zone, COUNT(*) AS cnt
-            FROM droppings d
-            JOIN videos v ON d.video_id = v.video_id
-            WHERE 1=1 {period_sql}
-            GROUP BY d.zone""",
-        list(params),
-    ).fetchall()
-    by_zone = {row["zone"]: row["cnt"] for row in rows}
+        # By zone
+        rows = conn.execute(
+            f"""SELECT COALESCE(d.zone, 'unknown') AS zone, COUNT(*) AS cnt
+                FROM droppings d
+                JOIN videos v ON d.video_id = v.video_id
+                WHERE 1=1 {period_sql}
+                GROUP BY d.zone""",
+            list(params),
+        ).fetchall()
+        by_zone = {row["zone"]: row["cnt"] for row in rows}
 
-    # Heatmap grid
-    rows = conn.execute(
-        f"""SELECT d.centroid_x, d.centroid_y
-            FROM droppings d
-            JOIN videos v ON d.video_id = v.video_id
-            WHERE d.centroid_x IS NOT NULL AND d.centroid_y IS NOT NULL
-              {period_sql}""",
-        list(params),
-    ).fetchall()
-    conn.close()
+        # Heatmap grid
+        rows = conn.execute(
+            f"""SELECT d.centroid_x, d.centroid_y
+                FROM droppings d
+                JOIN videos v ON d.video_id = v.video_id
+                WHERE d.centroid_x IS NOT NULL AND d.centroid_y IS NOT NULL
+                  {period_sql}""",
+            list(params),
+        ).fetchall()
 
     grid_w, grid_h = 50, 50
     grid = [[0.0] * grid_w for _ in range(grid_h)]
@@ -188,61 +184,60 @@ async def compare_sessions(
     a: str = Query(..., description="Session ID A"),
     b: str = Query(..., description="Session ID B"),
 ):
-    conn = get_connection()
+    with get_db() as conn:
+        def _session_data(session_id: str) -> dict:
+            # Zone occupancy
+            rows = conn.execute(
+                """SELECT f.pigeon_id, f.current_zone, COUNT(*) AS cnt
+                   FROM features f
+                   JOIN videos v ON f.video_id = v.video_id
+                   WHERE v.session_id = ? AND f.current_zone IS NOT NULL
+                   GROUP BY f.pigeon_id, f.current_zone""",
+                (session_id,),
+            ).fetchall()
 
-    def _session_data(session_id: str) -> dict:
-        # Zone occupancy
-        rows = conn.execute(
-            """SELECT f.pigeon_id, f.current_zone, COUNT(*) AS cnt
-               FROM features f
-               JOIN videos v ON f.video_id = v.video_id
-               WHERE v.session_id = ? AND f.current_zone IS NOT NULL
-               GROUP BY f.pigeon_id, f.current_zone""",
-            (session_id,),
-        ).fetchall()
+            pigeon_totals: dict[str, int] = {}
+            pigeon_zones: dict[str, dict[str, int]] = {}
+            for row in rows:
+                pid = row["pigeon_id"]
+                pigeon_totals[pid] = pigeon_totals.get(pid, 0) + row["cnt"]
+                pigeon_zones.setdefault(pid, {})[row["current_zone"]] = row["cnt"]
 
-        pigeon_totals: dict[str, int] = {}
-        pigeon_zones: dict[str, dict[str, int]] = {}
-        for row in rows:
-            pid = row["pigeon_id"]
-            pigeon_totals[pid] = pigeon_totals.get(pid, 0) + row["cnt"]
-            pigeon_zones.setdefault(pid, {})[row["current_zone"]] = row["cnt"]
+            zone_occ: dict[str, dict[str, float]] = {}
+            for pid, zones in pigeon_zones.items():
+                total = pigeon_totals[pid]
+                zone_occ[pid] = {z: round(c / total * 100, 1) for z, c in zones.items()}
 
-        zone_occ: dict[str, dict[str, float]] = {}
-        for pid, zones in pigeon_zones.items():
-            total = pigeon_totals[pid]
-            zone_occ[pid] = {z: round(c / total * 100, 1) for z, c in zones.items()}
+            # Behavior summary
+            rows = conn.execute(
+                """SELECT b.pigeon_id, b.behavior, SUM(b.duration_seconds) AS total_dur, COUNT(*) AS cnt
+                   FROM behaviors b
+                   JOIN videos v ON b.video_id = v.video_id
+                   WHERE v.session_id = ?
+                   GROUP BY b.pigeon_id, b.behavior""",
+                (session_id,),
+            ).fetchall()
 
-        # Behavior summary
-        rows = conn.execute(
-            """SELECT b.pigeon_id, b.behavior, SUM(b.duration_seconds) AS total_dur, COUNT(*) AS cnt
-               FROM behaviors b
-               JOIN videos v ON b.video_id = v.video_id
-               WHERE v.session_id = ?
-               GROUP BY b.pigeon_id, b.behavior""",
-            (session_id,),
-        ).fetchall()
+            behaviors: dict[str, dict[str, dict]] = {}
+            for row in rows:
+                behaviors.setdefault(row["pigeon_id"], {})[row["behavior"]] = {
+                    "duration_seconds": round(row["total_dur"], 2) if row["total_dur"] else 0.0,
+                    "event_count": row["cnt"],
+                }
 
-        behaviors: dict[str, dict[str, dict]] = {}
-        for row in rows:
-            behaviors.setdefault(row["pigeon_id"], {})[row["behavior"]] = {
-                "duration_seconds": round(row["total_dur"], 2) if row["total_dur"] else 0.0,
-                "event_count": row["cnt"],
-            }
+            # Pigeon IDs in session
+            rows = conn.execute(
+                """SELECT DISTINCT pigeon_id FROM video_assignments va
+                   JOIN videos v ON va.video_id = v.video_id
+                   WHERE v.session_id = ?""",
+                (session_id,),
+            ).fetchall()
+            pigeon_ids = {row["pigeon_id"] for row in rows}
 
-        # Pigeon IDs in session
-        rows = conn.execute(
-            """SELECT DISTINCT pigeon_id FROM video_assignments va
-               JOIN videos v ON va.video_id = v.video_id
-               WHERE v.session_id = ?""",
-            (session_id,),
-        ).fetchall()
-        pigeon_ids = {row["pigeon_id"] for row in rows}
+            return {"zone_occupancy": zone_occ, "behaviors": behaviors, "pigeon_ids": pigeon_ids}
 
-        return {"zone_occupancy": zone_occ, "behaviors": behaviors, "pigeon_ids": pigeon_ids}
-
-    data_a = _session_data(a)
-    data_b = _session_data(b)
+        data_a = _session_data(a)
+        data_b = _session_data(b)
 
     # Zone occupancy diff
     all_pigeons = data_a["pigeon_ids"] | data_b["pigeon_ids"]
@@ -285,7 +280,6 @@ async def compare_sessions(
         "in_both": sorted(data_a["pigeon_ids"] & data_b["pigeon_ids"]),
     }
 
-    conn.close()
     return {
         "session_a": a,
         "session_b": b,
