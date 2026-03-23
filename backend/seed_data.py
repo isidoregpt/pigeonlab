@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 # Ensure backend modules are importable
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from database import init_db, get_connection
+from database import init_db, get_connection, DB_PATH
 
 ZONES = ["Center", "North", "South", "East", "West", "NW Corner", "SE Corner"]
 BEHAVIORS = ["Feeding", "Resting", "Walking", "Preening", "Courtship"]
@@ -24,6 +24,14 @@ def seed():
     init_db()
     conn = get_connection()
     cur = conn.cursor()
+
+    # Idempotency check
+    count = cur.execute("SELECT COUNT(*) FROM pigeons").fetchone()[0]
+    if count > 0:
+        conn.close()
+        print("  Data already seeded. Delete data/pigeonlab.db to re-seed,")
+        print("  or run with --force to drop and recreate.")
+        return
 
     now = datetime.utcnow()
     yesterday = now - timedelta(days=1)
@@ -413,16 +421,42 @@ def seed():
     # Commit
     # --------------------------------------------------
     conn.commit()
+
+    # --------------------------------------------------
+    # Summary
+    # --------------------------------------------------
+    tables = [
+        "pigeons", "videos", "video_assignments", "qc_flags",
+        "features", "behaviors", "pairwise", "droppings",
+        "clip_library", "behavior_labels", "model_registry",
+    ]
+    print()
+    print("  Seed complete! Summary:")
+    for table in tables:
+        cnt = cur.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        print(f"    {table:24s} {cnt:>5}")
+
     conn.close()
 
     print()
-    print("  Seed data loaded successfully!")
-    print(f"  Database: {Path(__file__).resolve().parent.parent / 'data' / 'pigeonlab.db'}")
+    print(f"  Database: {DB_PATH}")
     print()
 
 
 if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Seed PigeonLab development data")
+    parser.add_argument("--force", action="store_true", help="Delete existing DB and re-seed")
+    args = parser.parse_args()
+
     print()
     print("  Seeding PigeonLab development data...")
     print()
+
+    if args.force:
+        DB_PATH.unlink(missing_ok=True)
+        print("  Deleted existing database (--force)")
+        print()
+
     seed()
