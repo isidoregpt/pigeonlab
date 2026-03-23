@@ -20,6 +20,7 @@ import { getAttentionCount } from "../api/stats";
 import type { VideoAssignment, QCFlag } from "../types";
 import StatusBadge from "../components/ui/StatusBadge";
 import LoadingState from "../components/ui/LoadingState";
+import SectionError from "../components/ui/SectionError";
 import { formatDuration } from "../utils/formatTime";
 import { useToast } from "../components/ui/Toast";
 import { usePageTitle } from "../hooks/usePageTitle";
@@ -126,11 +127,7 @@ function IdentityReview({ videoId }: { videoId: number }) {
   if (assignmentsQuery.isLoading || pigeonsQuery.isLoading) return <LoadingState variant="list" />;
 
   if (assignmentsQuery.isError) {
-    return (
-      <div className="text-center py-16 text-text-secondary text-sm">
-        Could not load identity assignments for this video.
-      </div>
-    );
+    return <SectionError message="Failed to load identity assignments." onRetry={() => assignmentsQuery.refetch()} />;
   }
 
   if (total === 0) {
@@ -344,11 +341,7 @@ function QCReview({ videoId }: { videoId?: number }) {
   if (flagsQuery.isLoading) return <LoadingState variant="list" />;
 
   if (flagsQuery.isError) {
-    return (
-      <div className="text-center py-16 text-text-secondary text-sm">
-        Could not load QC flags. Please try refreshing.
-      </div>
-    );
+    return <SectionError message="Failed to load QC flags." onRetry={() => flagsQuery.refetch()} />;
   }
 
   if (flags.length === 0) {
@@ -491,11 +484,7 @@ function DroppingReview() {
   if (droppingsQuery.isLoading) return <LoadingState variant="list" />;
 
   if (droppingsQuery.isError) {
-    return (
-      <div className="text-center py-16 text-text-secondary text-sm">
-        Could not load droppings. Please try refreshing.
-      </div>
-    );
+    return <SectionError message="Failed to load droppings." onRetry={() => droppingsQuery.refetch()} />;
   }
 
   if (droppings.length === 0) {
@@ -612,11 +601,7 @@ function BehaviorReview() {
   if (behaviorsQuery.isLoading) return <LoadingState variant="list" />;
 
   if (behaviorsQuery.isError) {
-    return (
-      <div className="text-center py-16 text-text-secondary text-sm">
-        Could not load behaviors. Please try refreshing.
-      </div>
-    );
+    return <SectionError message="Failed to load behaviors." onRetry={() => behaviorsQuery.refetch()} />;
   }
 
   if (behaviors.length === 0) {
@@ -723,11 +708,7 @@ function ReviewQueue() {
   if (countQuery.isLoading) return <LoadingState variant="list" />;
 
   if (countQuery.isError) {
-    return (
-      <div className="text-center py-16 text-text-secondary text-sm">
-        Could not load review queue. Please try refreshing.
-      </div>
-    );
+    return <SectionError message="Failed to load review queue." onRetry={() => countQuery.refetch()} />;
   }
 
   const counts = countQuery.data;

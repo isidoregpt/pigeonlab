@@ -26,6 +26,7 @@ import type { ClipWithLabel, TrainConfig } from "../api/training";
 import type { ModelRegistryEntry } from "../types";
 import LoadingState from "../components/ui/LoadingState";
 import EmptyState from "../components/ui/EmptyState";
+import SectionError from "../components/ui/SectionError";
 import { usePageTitle } from "../hooks/usePageTitle";
 
 /* ================================================================ */
@@ -116,6 +117,7 @@ function ClipLibraryTab({ onLabel }: { onLabel: (id: number) => void }) {
   const pigeonIds = [...new Set(clips.map((c) => c.pigeon_id).filter(Boolean))] as string[];
 
   if (clipsQuery.isLoading) return <LoadingState />;
+  if (clipsQuery.isError) return <SectionError message="Failed to load clips." onRetry={() => clipsQuery.refetch()} />;
 
   return (
     <div className="space-y-4">
@@ -286,6 +288,7 @@ function LabelClipsTab({
   }, [handleLabel]);
 
   if (clipsQuery.isLoading) return <LoadingState />;
+  if (clipsQuery.isError) return <SectionError message="Failed to load clips." onRetry={() => clipsQuery.refetch()} />;
 
   const reviewedCount = currentIdx;
   const totalCount = clips.length;
@@ -504,6 +507,8 @@ function TrainModelTab() {
               <div key={i} className="h-5 bg-border/30 rounded animate-pulse" />
             ))}
           </div>
+        ) : readinessQuery.isError ? (
+          <SectionError message="Failed to load readiness." onRetry={() => readinessQuery.refetch()} />
         ) : (
           <>
             {readiness && (
@@ -769,6 +774,7 @@ function ModelHistoryTab() {
   const comparedB = models.find((m) => m.id === selectedIds[1]);
 
   if (modelsQuery.isLoading) return <LoadingState />;
+  if (modelsQuery.isError) return <SectionError message="Failed to load models." onRetry={() => modelsQuery.refetch()} />;
 
   if (models.length === 0) {
     return (

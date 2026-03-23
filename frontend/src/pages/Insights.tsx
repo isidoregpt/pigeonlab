@@ -24,6 +24,7 @@ import { usePageTitle } from "../hooks/usePageTitle";
 import HeatmapCanvas from "../components/ui/HeatmapCanvas";
 import { useToast } from "../components/ui/Toast";
 import { formatDuration } from "../utils/formatTime";
+import SectionError from "../components/ui/SectionError";
 
 type Period = "day" | "week" | "month" | "all";
 const PERIOD_LABELS: Record<Period, string> = {
@@ -312,7 +313,7 @@ export default function Insights() {
         {heatmapQuery.isLoading ? (
           <div className="h-48 bg-border/20 rounded animate-pulse" />
         ) : heatmapQuery.isError ? (
-          <SectionEmpty message="Failed to load heatmap data." />
+          <SectionError message="Failed to load heatmap." onRetry={() => heatmapQuery.refetch()} />
         ) : heatmapQuery.data?.grid?.length ? (
           <HeatmapCanvas grid={heatmapQuery.data.grid} />
         ) : (
@@ -323,6 +324,13 @@ export default function Insights() {
       {/* ===== 2. Behavior Summary ===== */}
       {behaviorsQuery.isLoading ? (
         <SectionSkeleton h={250} />
+      ) : behaviorsQuery.isError ? (
+        <section className="bg-surface border border-border rounded-xl p-5">
+          <h2 className="text-sm font-semibold text-text-primary mb-4">
+            Behavior Summary
+          </h2>
+          <SectionError message="Failed to load behaviors." onRetry={() => behaviorsQuery.refetch()} />
+        </section>
       ) : (
         <section className="bg-surface border border-border rounded-xl p-5">
           <h2 className="text-sm font-semibold text-text-primary mb-4">
@@ -414,7 +422,7 @@ export default function Insights() {
             Social Map
           </h2>
           {pairwiseQuery.isError ? (
-            <SectionEmpty message="Failed to load social data." />
+            <SectionError message="Failed to load social data." onRetry={() => pairwiseQuery.refetch()} />
           ) : (pairwiseQuery.data?.pairs ?? []).length === 0 ? (
             <SectionEmpty message="No pairwise data for this period." />
           ) : (
@@ -441,7 +449,7 @@ export default function Insights() {
           </div>
 
           {droppingsQuery.isError ? (
-            <SectionEmpty message="Failed to load droppings data." />
+            <SectionError message="Failed to load droppings data." onRetry={() => droppingsQuery.refetch()} />
           ) : droppingsQuery.data?.grid?.length ? (
             <>
               <HeatmapCanvas
@@ -535,7 +543,7 @@ export default function Insights() {
         ) : compareQuery.isLoading ? (
           <div className="h-32 bg-border/20 rounded animate-pulse" />
         ) : compareQuery.isError ? (
-          <SectionEmpty message="Failed to load comparison data." />
+          <SectionError message="Failed to load comparison." onRetry={() => compareQuery.refetch()} />
         ) : compareQuery.data ? (
           <div className="space-y-5">
             {/* Zone Occupancy Changes */}
