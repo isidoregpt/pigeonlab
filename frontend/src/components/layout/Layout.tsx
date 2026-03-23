@@ -29,7 +29,9 @@ export default function Layout() {
       <div className="flex-1 flex flex-col min-w-0">
         <TopBar title={title} />
         <main className="flex-1 overflow-auto bg-bg p-6">
-          <Outlet />
+          <div key={location.pathname} className="page-enter">
+            <Outlet />
+          </div>
         </main>
       </div>
     </div>
