@@ -1,7 +1,22 @@
+from enum import Enum
+
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from database import get_db
+
+
+class QCFlagAction(str, Enum):
+    acknowledge = "acknowledge"
+    resolve = "resolve"
+
+
+class ResolvedAction(str, Enum):
+    accepted = "accepted"
+    corrected = "corrected"
+    ignored = "ignored"
+    empty = ""
+
 
 router = APIRouter()
 
@@ -19,16 +34,16 @@ class IdentityReviewRequest(BaseModel):
 
 class QCFlagReviewRequest(BaseModel):
     flag_id: int
-    action: str
-    resolved_action: str = ""
+    action: QCFlagAction
+    resolved_action: ResolvedAction = ResolvedAction.empty
     reviewer: str = ""
     notes: str = ""
 
 
 class QCFlagBatchResolveRequest(BaseModel):
     flag_ids: list[int]
-    action: str = "resolve"
-    resolved_action: str = "accepted"
+    action: QCFlagAction = QCFlagAction.resolve
+    resolved_action: ResolvedAction = ResolvedAction.accepted
     reviewer: str = ""
 
 
