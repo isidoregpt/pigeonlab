@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 import {
   Home,
@@ -7,6 +8,7 @@ import {
   FlaskConical,
   Settings,
 } from "lucide-react";
+import { apiFetch } from "../../api/client";
 
 const mainLinks = [
   { to: "/", label: "Home", icon: Home },
@@ -25,12 +27,14 @@ function NavItem({
   icon: Icon,
   end,
   subtle,
+  showDot,
 }: {
   to: string;
   label: string;
   icon: typeof Home;
   end?: boolean;
   subtle?: boolean;
+  showDot?: boolean;
 }) {
   return (
     <NavLink
@@ -49,11 +53,30 @@ function NavItem({
     >
       <Icon size={18} strokeWidth={1.8} />
       {label}
+      {showDot && (
+        <span className="w-2 h-2 rounded-full bg-warning shrink-0" />
+      )}
     </NavLink>
   );
 }
 
 export default function Sidebar() {
+  const [hasAttention, setHasAttention] = useState(false);
+
+  useEffect(() => {
+    apiFetch<{ total: number }>("/review/attention/count")
+      .then((data) => setHasAttention(data.total > 0))
+      .catch(() => setHasAttention(false));
+
+    const interval = setInterval(() => {
+      apiFetch<{ total: number }>("/review/attention/count")
+        .then((data) => setHasAttention(data.total > 0))
+        .catch(() => {});
+    }, 30_000);
+
+    return () => clearInterval(interval);
+  }, []);
+
   return (
     <aside className="w-[220px] h-screen bg-bg border-r border-border flex flex-col shrink-0">
       {/* Logo */}
@@ -67,7 +90,12 @@ export default function Sidebar() {
       {/* Main nav */}
       <nav className="flex flex-col gap-0.5 mt-2 px-2">
         {mainLinks.map((link) => (
-          <NavItem key={link.to} {...link} end={link.to === "/"} />
+          <NavItem
+            key={link.to}
+            {...link}
+            end={link.to === "/"}
+            showDot={link.to === "/" && hasAttention}
+          />
         ))}
       </nav>
 
