@@ -1,4 +1,5 @@
 import uuid
+from enum import Enum
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
@@ -22,8 +23,15 @@ class ProcessRequest(BaseModel):
     session_id: str = ""
 
 
+class ReviewStatus(str, Enum):
+    raw = "raw"
+    reviewed = "reviewed"
+    approved = "approved"
+    rejected = "rejected"
+
+
 class ReviewUpdate(BaseModel):
-    review_status: str
+    review_status: ReviewStatus
     reviewer: str
 
 
