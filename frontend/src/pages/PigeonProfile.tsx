@@ -98,6 +98,7 @@ export default function PigeonProfile() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["pigeon", pigeonId] });
+      queryClient.invalidateQueries({ queryKey: ["pigeons"] });
       setEditing(false);
     },
   });

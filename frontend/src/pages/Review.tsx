@@ -103,9 +103,10 @@ function IdentityReview({ videoId }: { videoId: number }) {
       }),
     onSuccess: (_data, variables) => {
       toast.success(`Identity confirmed as ${variables.pigeonId}`);
-      queryClient.invalidateQueries({
-        queryKey: ["unconfirmed-identities", videoId],
-      });
+      queryClient.invalidateQueries({ queryKey: ["unconfirmed-identities", videoId] });
+      queryClient.invalidateQueries({ queryKey: ["attention-count"] });
+      queryClient.invalidateQueries({ queryKey: ["attention-items"] });
+      queryClient.invalidateQueries({ queryKey: ["stats-today"] });
       advance();
     },
     onError: () => {
@@ -310,6 +311,8 @@ function QCReview({ videoId }: { videoId?: number }) {
     onSuccess: () => {
       toast.success("QC flag resolved");
       queryClient.invalidateQueries({ queryKey: ["qc-flags", videoId] });
+      queryClient.invalidateQueries({ queryKey: ["attention-count"] });
+      queryClient.invalidateQueries({ queryKey: ["attention-items"] });
     },
     onError: () => {
       toast.error("Failed to resolve QC flag");
@@ -327,6 +330,8 @@ function QCReview({ videoId }: { videoId?: number }) {
     onSuccess: () => {
       toast.success("All low-severity flags resolved");
       queryClient.invalidateQueries({ queryKey: ["qc-flags", videoId] });
+      queryClient.invalidateQueries({ queryKey: ["attention-count"] });
+      queryClient.invalidateQueries({ queryKey: ["attention-items"] });
     },
     onError: () => {
       toast.error("Failed to batch resolve flags");
@@ -473,6 +478,7 @@ function DroppingReview() {
       );
       queryClient.invalidateQueries({ queryKey: ["droppings-review"] });
       queryClient.invalidateQueries({ queryKey: ["attention-count"] });
+      queryClient.invalidateQueries({ queryKey: ["insights-droppings"] });
     },
     onError: () => {
       toast.error("Failed to review dropping");

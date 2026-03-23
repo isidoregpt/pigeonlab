@@ -88,8 +88,11 @@ export default function VideoDetail() {
         resolved_action: "dismissed",
         reviewer: "lab_user",
       }),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: ["video-qc", videoId] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["video-qc", videoId] });
+      queryClient.invalidateQueries({ queryKey: ["attention-count"] });
+      queryClient.invalidateQueries({ queryKey: ["attention-items"] });
+    },
   });
 
   // --- Frame navigation ---

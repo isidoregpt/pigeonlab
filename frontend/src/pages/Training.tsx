@@ -438,6 +438,7 @@ function LabelClipsTab({
    Tab 3: Train Model
    ================================================================ */
 function TrainModelTab() {
+  const queryClient = useQueryClient();
   const [backbone, setBackbone] = useState("r3d_18");
   const [epochs, setEpochs] = useState(50);
   const [batchSize, setBatchSize] = useState(16);
@@ -455,7 +456,10 @@ function TrainModelTab() {
 
   const trainMutation = useMutation({
     mutationFn: (config: TrainConfig) => startTraining(config),
-    onSuccess: (data) => setJobId(data.job_id),
+    onSuccess: (data) => {
+      setJobId(data.job_id);
+      queryClient.invalidateQueries({ queryKey: ["models"] });
+    },
   });
 
   const statusQuery = useQuery({

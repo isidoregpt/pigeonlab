@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { X, FolderOpen, ChevronRight, Check, Loader2 } from "lucide-react";
 import { processVideos } from "../../api/videos";
 
@@ -12,6 +13,7 @@ const CAMERA_OPTIONS = ["Overhead", "Side", "Corner", "Other"] as const;
 const STEPS = ["Select Files", "Camera Setup", "Processing Options"] as const;
 
 export default function AddVideosModal({ onClose, onSuccess }: AddVideosModalProps) {
+  const queryClient = useQueryClient();
   const [step, setStep] = useState(0);
   const [paths, setPaths] = useState<string[]>([""]);
   const [cameraAssignments, setCameraAssignments] = useState<Record<string, string>>({});
@@ -77,6 +79,8 @@ export default function AddVideosModal({ onClose, onSuccess }: AddVideosModalPro
         expected_pigeon_count: pigeonCount,
         text_prompt: textPrompt.trim() || "pigeon",
       });
+      queryClient.invalidateQueries({ queryKey: ["videos"] });
+      queryClient.invalidateQueries({ queryKey: ["stats-today"] });
       setSuccess(true);
       setTimeout(() => onSuccess(), 1500);
     } catch (err) {
