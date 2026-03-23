@@ -1,4 +1,5 @@
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
 
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "pigeonlab.db"
@@ -10,11 +11,26 @@ def get_db_path() -> str:
 
 
 def get_connection() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(DB_PATH))
+    try:
+        conn = sqlite3.connect(str(DB_PATH))
+    except sqlite3.Error as exc:
+        raise RuntimeError(
+            f"Failed to open database at {DB_PATH}: {exc}"
+        ) from exc
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.row_factory = sqlite3.Row
     return conn
+
+
+@contextmanager
+def get_db():
+    """Context manager that yields a connection and guarantees close on exit."""
+    conn = get_connection()
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 
 def init_db():
