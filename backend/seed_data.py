@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 # Ensure backend modules are importable
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from database import init_db, get_connection, DB_PATH
+from database import init_db, get_connection, DB_PATH  # noqa: E402
 
 ZONES = ["Center", "North", "South", "East", "West", "NW Corner", "SE Corner"]
 BEHAVIORS = ["Feeding", "Resting", "Walking", "Preening", "Courtship"]
@@ -386,7 +386,7 @@ def seed():
              None),
         )
 
-    print(f"  Inserted 5 behavior labels")
+    print("  Inserted 5 behavior labels")
 
     # --------------------------------------------------
     # Model registry (1 inactive trained model)
@@ -415,7 +415,7 @@ def seed():
          0),
     )
 
-    print(f"  Inserted 1 model registry entry")
+    print("  Inserted 1 model registry entry")
 
     # --------------------------------------------------
     # Commit

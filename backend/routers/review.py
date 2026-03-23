@@ -196,7 +196,7 @@ async def attention_items(limit: int = Query(5, ge=1, le=50)):
                            + f" ({conf}% confidence)",
             "severity": "high" if conf < 70 else "medium",
             "video_id": row["video_id"],
-            "link": f"/review?type=behavior",
+            "link": "/review?type=behavior",
         })
 
     severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
@@ -258,17 +258,20 @@ async def review_identity(body: IdentityReviewRequest):
 
     if body.action == "reassign" and body.new_pigeon_id:
         conn.execute(
-            "UPDATE video_assignments SET pigeon_id = ?, review_status = ?, reviewed_at = datetime('now'), reviewed_by = ? WHERE id = ?",
+            """UPDATE video_assignments SET pigeon_id = ?, review_status = ?,
+               reviewed_at = datetime('now'), reviewed_by = ? WHERE id = ?""",
             (body.new_pigeon_id, new_status, body.reviewer, body.assignment_id),
         )
     elif body.action == "reject":
         conn.execute(
-            "UPDATE video_assignments SET review_status = 'rejected', reviewed_at = datetime('now'), reviewed_by = ? WHERE id = ?",
+            """UPDATE video_assignments SET review_status = 'rejected',
+               reviewed_at = datetime('now'), reviewed_by = ? WHERE id = ?""",
             (body.reviewer, body.assignment_id),
         )
     else:
         conn.execute(
-            "UPDATE video_assignments SET review_status = ?, reviewed_at = datetime('now'), reviewed_by = ? WHERE id = ?",
+            """UPDATE video_assignments SET review_status = ?,
+               reviewed_at = datetime('now'), reviewed_by = ? WHERE id = ?""",
             (new_status, body.reviewer, body.assignment_id),
         )
 
