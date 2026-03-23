@@ -105,6 +105,9 @@ async def get_video(video_id: int):
 
 @router.post("/process")
 async def process_videos(req: ProcessRequest):
+    if not req.video_paths:
+        raise HTTPException(status_code=400, detail="video_paths must not be empty.")
+
     conn = get_connection()
     job_id = str(uuid.uuid4())
     queued = 0

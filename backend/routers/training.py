@@ -207,6 +207,12 @@ async def start_training(payload: TrainPayload):
 
     Does not implement actual PyTorch training — that is a future phase.
     """
+    if payload.behavior_classes is not None and len(payload.behavior_classes) == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="behavior_classes must not be empty when provided.",
+        )
+
     async with aiosqlite.connect(get_db_path()) as db:
         db.row_factory = aiosqlite.Row
 

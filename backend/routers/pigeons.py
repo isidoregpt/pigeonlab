@@ -1,3 +1,4 @@
+import re
 from datetime import date, timedelta
 
 from fastapi import APIRouter, HTTPException, Query
@@ -194,8 +195,17 @@ async def identity_status(pigeon_id: str):
     }
 
 
+PIGEON_ID_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
+
+
 @router.post("/")
 async def create_pigeon(body: PigeonCreate):
+    if not PIGEON_ID_RE.match(body.pigeon_id):
+        raise HTTPException(
+            status_code=400,
+            detail="pigeon_id may only contain letters, numbers, hyphens, and underscores.",
+        )
+
     conn = get_connection()
 
     existing = conn.execute(

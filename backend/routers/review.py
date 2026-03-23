@@ -244,10 +244,14 @@ async def review_identity(body: IdentityReviewRequest):
         raise HTTPException(status_code=404, detail=f"Assignment {body.assignment_id} not found")
 
     assignment = dict(row)
-    new_status = ACTION_STATUS.get(body.action)
-    if not new_status:
+    VALID_ACTIONS = ["confirm", "reject", "reassign"]
+    if body.action not in VALID_ACTIONS:
         conn.close()
-        raise HTTPException(status_code=400, detail=f"Invalid action '{body.action}'. Use confirm, reject, or reassign.")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid action '{body.action}'. Must be one of: {', '.join(VALID_ACTIONS)}.",
+        )
+    new_status = ACTION_STATUS[body.action]
 
     old_pigeon = body.old_pigeon_id or assignment["pigeon_id"]
     new_pigeon = body.new_pigeon_id or assignment["pigeon_id"]
