@@ -15,7 +15,7 @@ export default function HeatmapCanvas({
 }: HeatmapCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rows = grid.length;
-  const cols = rows > 0 ? grid[0].length : 0;
+  const cols = rows > 0 ? grid[0]!.length : 0;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -33,7 +33,7 @@ export default function HeatmapCanvas({
 
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
-        const t = grid[r][c] / max;
+        const t = grid[r]![c]! / max;
         const red = Math.round(255 + (accent[0] - 255) * t);
         const green = Math.round(255 + (accent[1] - 255) * t);
         const blue = Math.round(255 + (accent[2] - 255) * t);

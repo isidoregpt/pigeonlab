@@ -124,16 +124,16 @@ function SocialMap({
       {pigeonList.map((id, i) => (
         <g key={id}>
           <circle
-            cx={positions[i].x}
-            cy={positions[i].y}
+            cx={positions[i]!.x}
+            cy={positions[i]!.y}
             r={22}
             fill="white"
             stroke="#0D9488"
             strokeWidth={2}
           />
           <text
-            x={positions[i].x}
-            y={positions[i].y + 1}
+            x={positions[i]!.x}
+            y={positions[i]!.y + 1}
             textAnchor="middle"
             dominantBaseline="central"
             fontSize={10}
