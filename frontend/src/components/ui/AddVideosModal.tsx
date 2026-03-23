@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { X, FolderOpen, ChevronRight, Check, Loader2 } from "lucide-react";
 import { processVideos } from "../../api/videos";
 
@@ -12,6 +13,7 @@ const CAMERA_OPTIONS = ["Overhead", "Side", "Corner", "Other"] as const;
 const STEPS = ["Select Files", "Camera Setup", "Processing Options"] as const;
 
 export default function AddVideosModal({ onClose, onSuccess }: AddVideosModalProps) {
+  const queryClient = useQueryClient();
   const [step, setStep] = useState(0);
   const [paths, setPaths] = useState<string[]>([""]);
   const [cameraAssignments, setCameraAssignments] = useState<Record<string, string>>({});
@@ -37,8 +39,8 @@ export default function AddVideosModal({ onClose, onSuccess }: AddVideosModalPro
           'button, input, select, textarea, [tabindex]:not([tabindex="-1"])',
         );
         if (focusable.length === 0) return;
-        const first = focusable[0];
-        const last = focusable[focusable.length - 1];
+        const first = focusable[0]!;
+        const last = focusable[focusable.length - 1]!;
         if (e.shiftKey && document.activeElement === first) {
           e.preventDefault();
           last.focus();
@@ -77,6 +79,8 @@ export default function AddVideosModal({ onClose, onSuccess }: AddVideosModalPro
         expected_pigeon_count: pigeonCount,
         text_prompt: textPrompt.trim() || "pigeon",
       });
+      queryClient.invalidateQueries({ queryKey: ["videos"] });
+      queryClient.invalidateQueries({ queryKey: ["stats-today"] });
       setSuccess(true);
       setTimeout(() => onSuccess(), 1500);
     } catch (err) {
@@ -230,6 +234,13 @@ export default function AddVideosModal({ onClose, onSuccess }: AddVideosModalPro
 
 /* ---------- Step 1: File paths ---------- */
 
+const VALID_VIDEO_EXT = /\.(mp4|avi|mov)$/i;
+
+function hasUnexpectedExtension(path: string): boolean {
+  const trimmed = path.trim();
+  return trimmed.length > 0 && !VALID_VIDEO_EXT.test(trimmed);
+}
+
 function Step1({
   paths,
   updatePath,
@@ -249,31 +260,42 @@ function Step1({
         Enter the file paths to your video files. These should be the full paths on your local machine.
       </p>
       {paths.map((p, i) => (
-        <div key={i} className="flex items-center gap-2">
-          <input
-            ref={i === 0 ? firstInputRef : undefined}
-            type="text"
-            value={p}
-            onChange={(e) => updatePath(i, e.target.value)}
-            placeholder="C:\Videos\session_01\overhead.mp4"
-            className="flex-1 px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text-primary placeholder:text-text-secondary/40 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-colors"
-          />
-          <button
-            type="button"
-            className="px-2.5 py-2 border border-border rounded-lg text-text-secondary hover:bg-bg transition-colors"
-            title="Browse (placeholder)"
-            aria-label="Browse files"
-          >
-            <FolderOpen size={16} />
-          </button>
-          {paths.length > 1 && (
+        <div key={i}>
+          <div className="flex items-center gap-2">
+            <input
+              ref={i === 0 ? firstInputRef : undefined}
+              type="text"
+              value={p}
+              onChange={(e) => updatePath(i, e.target.value)}
+              placeholder="C:\Videos\session_01\overhead.mp4"
+              className={`flex-1 px-3 py-2 bg-bg border rounded-lg text-sm text-text-primary placeholder:text-text-secondary/40 focus:outline-none focus:ring-2 transition-colors ${
+                hasUnexpectedExtension(p)
+                  ? "border-warning focus:ring-warning/30 focus:border-warning"
+                  : "border-border focus:ring-accent/30 focus:border-accent"
+              }`}
+            />
             <button
-              onClick={() => removePath(i)}
-              className="p-2 text-text-secondary hover:text-error transition-colors"
-              aria-label="Remove path"
+              type="button"
+              className="px-2.5 py-2 border border-border rounded-lg text-text-secondary hover:bg-bg transition-colors"
+              title="Browse (placeholder)"
+              aria-label="Browse files"
             >
-              <X size={14} />
+              <FolderOpen size={16} />
             </button>
+            {paths.length > 1 && (
+              <button
+                onClick={() => removePath(i)}
+                className="p-2 text-text-secondary hover:text-error transition-colors"
+                aria-label="Remove path"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+          {hasUnexpectedExtension(p) && (
+            <p className="text-[12px] text-warning mt-1">
+              Unexpected extension. Supported formats: .mp4, .avi, .mov
+            </p>
           )}
         </div>
       ))}

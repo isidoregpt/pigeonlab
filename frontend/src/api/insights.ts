@@ -84,6 +84,6 @@ export function createExport(payload: ExportPayload) {
   return post<ExportResponse>("/export", payload);
 }
 
-export function getExportDownloadUrl(filename: string) {
-  return `/api/export/download/${filename}`;
+export function getExportDownloadUrl(path: string) {
+  return path;
 }

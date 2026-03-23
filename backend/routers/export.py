@@ -32,6 +32,12 @@ def _period_clause(period: str | None) -> tuple[str, list]:
 
 @router.post("/")
 async def create_export(body: ExportRequest):
+    if body.format != "csv":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported export format '{body.format}'. Only 'csv' is currently supported.",
+        )
+
     conn = get_connection()
     EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
 

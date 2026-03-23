@@ -88,8 +88,11 @@ export default function VideoDetail() {
         resolved_action: "dismissed",
         reviewer: "lab_user",
       }),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: ["video-qc", videoId] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["video-qc", videoId] });
+      queryClient.invalidateQueries({ queryKey: ["attention-count"] });
+      queryClient.invalidateQueries({ queryKey: ["attention-items"] });
+    },
   });
 
   // --- Frame navigation ---
@@ -110,10 +113,10 @@ export default function VideoDetail() {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       if (e.key === "ArrowLeft") {
         e.preventDefault();
-        goToFrame(frameNum - 1);
+        goToFrame(frameNum - (e.shiftKey ? 10 : 1));
       } else if (e.key === "ArrowRight") {
         e.preventDefault();
-        goToFrame(frameNum + 1);
+        goToFrame(frameNum + (e.shiftKey ? 10 : 1));
       }
     };
     window.addEventListener("keydown", handleKey);
@@ -122,7 +125,7 @@ export default function VideoDetail() {
 
   // --- Render ---
 
-  if (videoQuery.isLoading) return <LoadingState />;
+  if (videoQuery.isLoading) return <LoadingState variant="detail" />;
 
   if (videoQuery.isError || !videoQuery.data) {
     return (
@@ -182,38 +185,61 @@ export default function VideoDetail() {
 
             {/* Controls */}
             {totalFrames > 0 && (
-              <div className="px-4 py-3 flex items-center gap-3">
-                <button
-                  onClick={() => goToFrame(frameNum - 1)}
-                  disabled={frameNum <= 0}
-                  className="p-1.5 rounded-lg hover:bg-bg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                  aria-label="Previous frame"
-                >
-                  <ChevronLeft size={18} />
-                </button>
+              <div className="px-4 py-3 space-y-2">
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => goToFrame(frameNum - 1)}
+                    disabled={frameNum <= 0}
+                    className="p-1.5 rounded-lg hover:bg-bg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                    aria-label="Previous frame"
+                  >
+                    <ChevronLeft size={18} />
+                  </button>
 
-                <span className="text-sm text-text-primary tabular-nums whitespace-nowrap">
-                  Frame {frameNum + 1} of {totalFrames}
-                </span>
+                  <span className="text-sm text-text-primary tabular-nums whitespace-nowrap">
+                    Frame{" "}
+                    <input
+                      type="number"
+                      min={1}
+                      max={totalFrames}
+                      value={frameNum + 1}
+                      onChange={(e) => {
+                        const v = parseInt(e.target.value, 10);
+                        if (!Number.isNaN(v)) goToFrame(v - 1);
+                      }}
+                      className="w-16 px-1.5 py-0.5 bg-bg border border-border rounded text-sm text-center tabular-nums focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-colors"
+                      aria-label="Frame number"
+                    />{" "}
+                    of {totalFrames}
+                    {video.fps != null && video.fps > 0 && (
+                      <span className="text-text-secondary ml-2">
+                        ({formatTimestamp(frameNum / video.fps)})
+                      </span>
+                    )}
+                  </span>
 
-                <button
-                  onClick={() => goToFrame(frameNum + 1)}
-                  disabled={frameNum >= totalFrames - 1}
-                  className="p-1.5 rounded-lg hover:bg-bg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                  aria-label="Next frame"
-                >
-                  <ChevronRight size={18} />
-                </button>
+                  <button
+                    onClick={() => goToFrame(frameNum + 1)}
+                    disabled={frameNum >= totalFrames - 1}
+                    className="p-1.5 rounded-lg hover:bg-bg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                    aria-label="Next frame"
+                  >
+                    <ChevronRight size={18} />
+                  </button>
 
-                <input
-                  type="range"
-                  min={0}
-                  max={Math.max(0, totalFrames - 1)}
-                  value={frameNum}
-                  onChange={(e) => goToFrame(Number(e.target.value))}
-                  className="flex-1 h-1.5 accent-accent cursor-pointer"
-                  aria-label="Frame scrubber"
-                />
+                  <input
+                    type="range"
+                    min={0}
+                    max={Math.max(0, totalFrames - 1)}
+                    value={frameNum}
+                    onChange={(e) => goToFrame(Number(e.target.value))}
+                    className="flex-1 h-1.5 accent-accent cursor-pointer"
+                    aria-label="Frame scrubber"
+                  />
+                </div>
+                <p className="text-[11px] text-text-secondary/60">
+                  ← → to navigate frames, Shift+← → to jump 10 frames
+                </p>
               </div>
             )}
           </div>
@@ -264,27 +290,59 @@ export default function VideoDetail() {
               </p>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {features.map((f) => (
-                  <div
-                    key={f.id}
-                    className="bg-surface border border-border rounded-xl px-4 py-3 flex items-center gap-3"
-                  >
-                    <span className="text-lg">🕊️</span>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-text-primary truncate">
-                        {f.pigeon_id}
-                      </p>
-                      <div className="flex items-center gap-3 text-[12px] text-text-secondary mt-0.5">
-                        {f.current_zone && <span>Zone: {f.current_zone}</span>}
-                        <span>
-                          {f.velocity_mm_s != null && f.velocity_mm_s > 5
-                            ? "Moving"
-                            : "Stationary"}
-                        </span>
+                {features.map((f) => {
+                  const isMoving = f.velocity_mm_s != null && f.velocity_mm_s > 5;
+                  const conf = f.confidence ?? 1;
+                  return (
+                    <div
+                      key={f.id}
+                      onClick={() => navigate(`/pigeons/${f.pigeon_id}`)}
+                      className="relative bg-surface border border-border rounded-xl px-4 py-3 flex items-center gap-3 cursor-pointer hover:border-accent hover:shadow-md transition-all overflow-hidden"
+                    >
+                      {/* Confidence bar */}
+                      <div
+                        className="absolute bottom-0 left-0 h-0.5 bg-accent/40 transition-all"
+                        style={{ width: `${conf * 100}%` }}
+                      />
+                      <span className="text-lg">🕊️</span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium text-text-primary truncate">
+                            {f.pigeon_id}
+                          </p>
+                          {f.heading_deg != null && (
+                            <span
+                              className="text-text-secondary text-xs leading-none"
+                              title={`Heading: ${Math.round(f.heading_deg)}°`}
+                            >
+                              <span
+                                className="inline-block"
+                                style={{ transform: `rotate(${f.heading_deg}deg)` }}
+                              >
+                                ↑
+                              </span>
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3 text-[12px] mt-0.5">
+                          {f.current_zone && (
+                            <span className="text-text-secondary">
+                              Zone: {f.current_zone}
+                            </span>
+                          )}
+                          <span className={isMoving ? "text-accent font-medium" : "text-text-secondary"}>
+                            {isMoving ? "Moving" : "Stationary"}
+                          </span>
+                          {f.velocity_mm_s != null && (
+                            <span className="text-text-secondary">
+                              {f.velocity_mm_s.toFixed(1)} mm/s
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </section>
@@ -424,6 +482,12 @@ export default function VideoDetail() {
       </div>
     </div>
   );
+}
+
+function formatTimestamp(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = (seconds % 60).toFixed(1);
+  return `${m}:${s.padStart(4, "0")}`;
 }
 
 function MetaRow({

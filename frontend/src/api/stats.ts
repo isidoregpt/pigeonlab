@@ -12,7 +12,7 @@ export function getStatsSummary(period = "week") {
 }
 
 export function getAttentionCount() {
-  return get<{ total: number; identity: number; qc: number; droppings: number }>(
+  return get<{ total: number; identity: number; qc: number; droppings: number; behaviors: number }>(
     "/review/attention/count",
   );
 }

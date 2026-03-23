@@ -25,6 +25,13 @@ class QCFlagReviewRequest(BaseModel):
     notes: str = ""
 
 
+class QCFlagBatchResolveRequest(BaseModel):
+    flag_ids: list[int]
+    action: str = "resolve"
+    resolved_action: str = "accepted"
+    reviewer: str = ""
+
+
 class MaskEditRequest(BaseModel):
     video_id: int
     frame_idx: int
@@ -99,12 +106,18 @@ async def attention_count():
     ).fetchone()
     droppings_cnt = row["cnt"] if row else 0
 
+    row = conn.execute(
+        "SELECT COUNT(*) AS cnt FROM behaviors WHERE review_status = 'raw'"
+    ).fetchone()
+    behaviors_cnt = row["cnt"] if row else 0
+
     conn.close()
     return {
-        "total": qc + identity + droppings_cnt,
+        "total": qc + identity + droppings_cnt + behaviors_cnt,
         "identity": identity,
         "qc": qc,
         "droppings": droppings_cnt,
+        "behaviors": behaviors_cnt,
     }
 
 
@@ -167,6 +180,25 @@ async def attention_items(limit: int = Query(5, ge=1, le=50)):
             "link": f"/videos/{row['video_id']}",
         })
 
+    rows = conn.execute(
+        """SELECT id, video_id, pigeon_id, behavior, confidence, zone
+           FROM behaviors WHERE review_status = 'raw'
+           ORDER BY confidence ASC LIMIT ?""",
+        (limit,),
+    ).fetchall()
+    for row in rows:
+        conf = round(row["confidence"] * 100) if row["confidence"] is not None else 0
+        items.append({
+            "id": row["id"],
+            "type": "behavior",
+            "description": f"{row['pigeon_id']} — {row['behavior'].replace('_', ' ')}"
+                           + (f" in {row['zone']}" if row["zone"] else "")
+                           + f" ({conf}% confidence)",
+            "severity": "high" if conf < 70 else "medium",
+            "video_id": row["video_id"],
+            "link": "/review?type=behavior",
+        })
+
     severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
     items.sort(key=lambda x: severity_order.get(x["severity"], 4))
     conn.close()
@@ -174,6 +206,17 @@ async def attention_items(limit: int = Query(5, ge=1, le=50)):
 
 
 # --- Identity review ---
+
+@router.get("/identities/next-video")
+async def next_video_for_identity_review():
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT video_id FROM video_assignments WHERE review_status = 'raw' "
+        "ORDER BY video_id LIMIT 1"
+    ).fetchone()
+    conn.close()
+    return {"video_id": row["video_id"] if row else None}
+
 
 @router.get("/identities")
 async def list_unconfirmed_identities(video_id: int = Query(...)):
@@ -201,27 +244,34 @@ async def review_identity(body: IdentityReviewRequest):
         raise HTTPException(status_code=404, detail=f"Assignment {body.assignment_id} not found")
 
     assignment = dict(row)
-    new_status = ACTION_STATUS.get(body.action)
-    if not new_status:
+    VALID_ACTIONS = ["confirm", "reject", "reassign"]
+    if body.action not in VALID_ACTIONS:
         conn.close()
-        raise HTTPException(status_code=400, detail=f"Invalid action '{body.action}'. Use confirm, reject, or reassign.")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid action '{body.action}'. Must be one of: {', '.join(VALID_ACTIONS)}.",
+        )
+    new_status = ACTION_STATUS[body.action]
 
     old_pigeon = body.old_pigeon_id or assignment["pigeon_id"]
     new_pigeon = body.new_pigeon_id or assignment["pigeon_id"]
 
     if body.action == "reassign" and body.new_pigeon_id:
         conn.execute(
-            "UPDATE video_assignments SET pigeon_id = ?, review_status = ?, reviewed_at = datetime('now'), reviewed_by = ? WHERE id = ?",
+            """UPDATE video_assignments SET pigeon_id = ?, review_status = ?,
+               reviewed_at = datetime('now'), reviewed_by = ? WHERE id = ?""",
             (body.new_pigeon_id, new_status, body.reviewer, body.assignment_id),
         )
     elif body.action == "reject":
         conn.execute(
-            "UPDATE video_assignments SET review_status = 'rejected', reviewed_at = datetime('now'), reviewed_by = ? WHERE id = ?",
+            """UPDATE video_assignments SET review_status = 'rejected',
+               reviewed_at = datetime('now'), reviewed_by = ? WHERE id = ?""",
             (body.reviewer, body.assignment_id),
         )
     else:
         conn.execute(
-            "UPDATE video_assignments SET review_status = ?, reviewed_at = datetime('now'), reviewed_by = ? WHERE id = ?",
+            """UPDATE video_assignments SET review_status = ?,
+               reviewed_at = datetime('now'), reviewed_by = ? WHERE id = ?""",
             (new_status, body.reviewer, body.assignment_id),
         )
 
@@ -285,6 +335,30 @@ async def review_qc_flag(body: QCFlagReviewRequest):
     updated = conn.execute("SELECT * FROM qc_flags WHERE id = ?", (body.flag_id,)).fetchone()
     conn.close()
     return dict(updated)
+
+
+@router.post("/qc-flags/batch-resolve")
+async def batch_resolve_qc_flags(body: QCFlagBatchResolveRequest):
+    if not body.flag_ids:
+        raise HTTPException(status_code=400, detail="flag_ids must not be empty")
+
+    conn = get_connection()
+    placeholders = ",".join("?" for _ in body.flag_ids)
+    resolved_action = body.resolved_action or body.action
+
+    conn.execute(
+        f"UPDATE qc_flags SET review_status = 'resolved', resolved_action = ? "
+        f"WHERE id IN ({placeholders})",
+        [resolved_action] + body.flag_ids,
+    )
+    conn.commit()
+
+    rows = conn.execute(
+        f"SELECT * FROM qc_flags WHERE id IN ({placeholders})",
+        body.flag_ids,
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 
 # --- Mask edit ---
@@ -411,7 +485,44 @@ async def review_behavior(body: BehaviorReviewRequest):
     return dict(updated)
 
 
+# --- Behavior review listing ---
+
+@router.get("/behaviors")
+async def list_behaviors(
+    status: str = Query("raw"),
+    video_id: int | None = Query(None),
+):
+    conn = get_connection()
+
+    query = "SELECT * FROM behaviors WHERE review_status = ?"
+    params: list = [status]
+
+    if video_id is not None:
+        query += " AND video_id = ?"
+        params.append(video_id)
+
+    query += " ORDER BY confidence ASC"
+
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
 # --- Dropping review ---
+
+@router.get("/droppings")
+async def list_droppings(
+    status: str = Query("raw"),
+    limit: int = Query(50, ge=1, le=200),
+):
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM droppings WHERE review_status = ? ORDER BY confidence ASC LIMIT ?",
+        (status, limit),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
 
 @router.post("/dropping")
 async def review_dropping(body: DroppingReviewRequest):

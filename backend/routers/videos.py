@@ -45,6 +45,16 @@ def _get_video_or_404(conn, video_id: int) -> dict:
 
 # --- Endpoints ---
 
+@router.get("/sessions")
+async def list_sessions():
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT DISTINCT session_id FROM videos WHERE session_id IS NOT NULL ORDER BY session_id"
+    ).fetchall()
+    conn.close()
+    return [r["session_id"] for r in rows]
+
+
 @router.get("/")
 async def list_videos(
     sort: str = Query("date"),
@@ -95,6 +105,9 @@ async def get_video(video_id: int):
 
 @router.post("/process")
 async def process_videos(req: ProcessRequest):
+    if not req.video_paths:
+        raise HTTPException(status_code=400, detail="video_paths must not be empty.")
+
     conn = get_connection()
     job_id = str(uuid.uuid4())
     queued = 0
@@ -157,3 +170,41 @@ async def update_review(video_id: int, body: ReviewUpdate):
     conn.close()
 
     return {"video_id": video_id, "review_status": body.review_status, "reviewer": body.reviewer}
+
+
+@router.get("/{video_id}/features")
+async def get_video_features(video_id: int, frame_idx: int = Query(...)):
+    conn = get_connection()
+    _get_video_or_404(conn, video_id)
+
+    rows = conn.execute(
+        "SELECT * FROM features WHERE video_id = ? AND frame_idx = ?",
+        (video_id, frame_idx),
+    ).fetchall()
+    conn.close()
+
+    return [dict(r) for r in rows]
+
+
+@router.get("/{video_id}/track-edits")
+async def get_video_track_edits(video_id: int):
+    conn = get_connection()
+    _get_video_or_404(conn, video_id)
+
+    rows = conn.execute(
+        "SELECT id, edit_type, editor, details, edited_at FROM track_edits "
+        "WHERE video_id = ? ORDER BY edited_at DESC",
+        (video_id,),
+    ).fetchall()
+    conn.close()
+
+    return [
+        {
+            "edit_id": r["id"],
+            "edit_type": r["edit_type"],
+            "editor": r["editor"],
+            "details": r["details"],
+            "created_at": r["edited_at"],
+        }
+        for r in rows
+    ]

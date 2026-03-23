@@ -3,6 +3,10 @@ import type { VideoAssignment, QCFlag, Behavior, DroppingDetection } from "../ty
 
 // --- Identity ---
 
+export function getNextVideoForIdentityReview() {
+  return get<{ video_id: number | null }>("/review/identities/next-video");
+}
+
 export function getUnconfirmedIdentities(videoId: number) {
   return get<VideoAssignment[]>(`/review/identities?video_id=${videoId}`);
 }
@@ -38,6 +42,16 @@ interface QCFlagReviewPayload {
 
 export function reviewQCFlag(payload: QCFlagReviewPayload) {
   return post<QCFlag>("/review/qc-flag", payload);
+}
+
+export function batchResolveQCFlags(payload: { flag_ids: number[]; action?: string; resolved_action?: string; reviewer?: string }) {
+  return post<QCFlag[]>("/review/qc-flags/batch-resolve", payload);
+}
+
+// --- Droppings List ---
+
+export function getDroppingsForReview(status = "raw", limit = 50) {
+  return get<DroppingDetection[]>(`/review/droppings?status=${status}&limit=${limit}`);
 }
 
 // --- Mask Edit ---
@@ -92,6 +106,10 @@ export function splitTrack(payload: TrackSplitPayload) {
 }
 
 // --- Behavior Review ---
+
+export function getBehaviorsForReview(status = "raw", limit = 50) {
+  return get<Behavior[]>(`/review/behaviors?status=${status}&limit=${limit}`);
+}
 
 export function reviewBehavior(payload: { behavior_id: number; action: "confirm" | "reject"; reviewer?: string }) {
   return post<Behavior>("/review/behavior", payload);

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   BarChart,
@@ -15,11 +15,16 @@ import {
   getInsightsBehaviors,
   getInsightsPairwise,
   getInsightsDroppings,
+  compareSessionsInsight,
   createExport,
-  getExportDownloadUrl,
 } from "../api/insights";
 import { getPigeons } from "../api/pigeons";
+import { getSessions } from "../api/videos";
 import { usePageTitle } from "../hooks/usePageTitle";
+import HeatmapCanvas from "../components/ui/HeatmapCanvas";
+import { useToast } from "../components/ui/Toast";
+import { formatDuration } from "../utils/formatTime";
+import SectionError from "../components/ui/SectionError";
 
 type Period = "day" | "week" | "month" | "all";
 const PERIOD_LABELS: Record<Period, string> = {
@@ -56,59 +61,6 @@ function SectionSkeleton({ h = 200 }: { h?: number }) {
 function SectionEmpty({ message }: { message: string }) {
   return (
     <p className="text-sm text-text-secondary py-6 text-center">{message}</p>
-  );
-}
-
-/* ================================================================
-   Heatmap Grid (shared by zone heatmap + droppings)
-   ================================================================ */
-function HeatmapCanvas({
-  grid,
-  accent = [13, 148, 136],
-}: {
-  grid: number[][];
-  accent?: [number, number, number];
-}) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const rows = grid.length;
-  const cols = rows > 0 ? grid[0].length : 0;
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || rows === 0 || cols === 0) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    const cellW = canvas.width / cols;
-    const cellH = canvas.height / rows;
-
-    // Find max value
-    let max = 0;
-    for (const row of grid) for (const v of row) if (v > max) max = v;
-    if (max === 0) max = 1;
-
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        const t = grid[r][c] / max;
-        const red = Math.round(255 + (accent[0] - 255) * t);
-        const green = Math.round(255 + (accent[1] - 255) * t);
-        const blue = Math.round(255 + (accent[2] - 255) * t);
-        ctx.fillStyle = `rgb(${red},${green},${blue})`;
-        ctx.fillRect(c * cellW, r * cellH, cellW + 0.5, cellH + 0.5);
-      }
-    }
-  }, [grid, rows, cols, accent]);
-
-  if (rows === 0) return <SectionEmpty message="No heatmap data available." />;
-
-  return (
-    <canvas
-      ref={canvasRef}
-      width={cols * 6}
-      height={rows * 6}
-      className="w-full rounded-lg border border-border"
-      style={{ imageRendering: "pixelated", aspectRatio: `${cols}/${rows}` }}
-    />
   );
 }
 
@@ -172,16 +124,16 @@ function SocialMap({
       {pigeonList.map((id, i) => (
         <g key={id}>
           <circle
-            cx={positions[i].x}
-            cy={positions[i].y}
+            cx={positions[i]!.x}
+            cy={positions[i]!.y}
             r={22}
             fill="white"
             stroke="#0D9488"
             strokeWidth={2}
           />
           <text
-            x={positions[i].x}
-            y={positions[i].y + 1}
+            x={positions[i]!.x}
+            y={positions[i]!.y + 1}
             textAnchor="middle"
             dominantBaseline="central"
             fontSize={10}
@@ -201,9 +153,13 @@ function SocialMap({
    ================================================================ */
 export default function Insights() {
   usePageTitle("Insights");
+  const toast = useToast();
   const [period, setPeriod] = useState<Period>("week");
   const [pigeonFilter, setPigeonFilter] = useState("all");
   const [periodOpen, setPeriodOpen] = useState(false);
+  const [behaviorPigeonFilter, setBehaviorPigeonFilter] = useState("all");
+  const [sessionA, setSessionA] = useState("");
+  const [sessionB, setSessionB] = useState("");
 
   // Fetch registered pigeons for filter buttons
   const pigeonsQuery = useQuery({
@@ -233,13 +189,24 @@ export default function Insights() {
     queryFn: () => getInsightsDroppings(period),
   });
 
+  const sessionsQuery = useQuery({
+    queryKey: ["sessions"],
+    queryFn: getSessions,
+  });
+
+  const compareQuery = useQuery({
+    queryKey: ["insights-compare", sessionA, sessionB],
+    queryFn: () => compareSessionsInsight(sessionA, sessionB),
+    enabled: sessionA.length > 0 && sessionB.length > 0 && sessionA !== sessionB,
+  });
+
   // Export
   const exportMutation = useMutation({
     mutationFn: () =>
       createExport({ format: "csv", include: ["features", "behaviors", "droppings"] }),
     onSuccess: (data) => {
       if (data.download_url) {
-        window.open(getExportDownloadUrl(data.download_url), "_blank");
+        window.open(data.download_url, "_blank");
       }
     },
   });
@@ -249,13 +216,18 @@ export default function Insights() {
     const pigeons = behaviorsQuery.data?.pigeons;
     if (!pigeons) return { data: [], behaviorKeys: [] as string[] };
 
+    const filtered =
+      behaviorPigeonFilter === "all"
+        ? Object.entries(pigeons)
+        : Object.entries(pigeons).filter(([id]) => id === behaviorPigeonFilter);
+
     const behaviorSet = new Set<string>();
-    for (const behaviors of Object.values(pigeons)) {
+    for (const [, behaviors] of filtered) {
       for (const bk of Object.keys(behaviors)) behaviorSet.add(bk);
     }
     const behaviorKeys = Array.from(behaviorSet);
 
-    const data = Object.entries(pigeons).map(([pigeonId, behaviors]) => {
+    const data = filtered.map(([pigeonId, behaviors]) => {
       const row: Record<string, string | number> = { pigeon: pigeonId };
       for (const bk of behaviorKeys) {
         row[bk] = behaviors[bk]?.duration_seconds ?? 0;
@@ -264,7 +236,7 @@ export default function Insights() {
     });
 
     return { data, behaviorKeys };
-  }, [behaviorsQuery.data]);
+  }, [behaviorsQuery.data, behaviorPigeonFilter]);
 
   return (
     <div className="space-y-8 max-w-5xl">
@@ -341,7 +313,7 @@ export default function Insights() {
         {heatmapQuery.isLoading ? (
           <div className="h-48 bg-border/20 rounded animate-pulse" />
         ) : heatmapQuery.isError ? (
-          <SectionEmpty message="Failed to load heatmap data." />
+          <SectionError message="Failed to load heatmap." onRetry={() => heatmapQuery.refetch()} />
         ) : heatmapQuery.data?.grid?.length ? (
           <HeatmapCanvas grid={heatmapQuery.data.grid} />
         ) : (
@@ -352,11 +324,38 @@ export default function Insights() {
       {/* ===== 2. Behavior Summary ===== */}
       {behaviorsQuery.isLoading ? (
         <SectionSkeleton h={250} />
+      ) : behaviorsQuery.isError ? (
+        <section className="bg-surface border border-border rounded-xl p-5">
+          <h2 className="text-sm font-semibold text-text-primary mb-4">
+            Behavior Summary
+          </h2>
+          <SectionError message="Failed to load behaviors." onRetry={() => behaviorsQuery.refetch()} />
+        </section>
       ) : (
         <section className="bg-surface border border-border rounded-xl p-5">
           <h2 className="text-sm font-semibold text-text-primary mb-4">
             Behavior Summary
           </h2>
+
+          {/* Pigeon filter buttons */}
+          <div className="flex flex-wrap gap-2 mb-4">
+            <FilterButton
+              active={behaviorPigeonFilter === "all"}
+              onClick={() => setBehaviorPigeonFilter("all")}
+            >
+              All
+            </FilterButton>
+            {pigeonIds.map((id) => (
+              <FilterButton
+                key={id}
+                active={behaviorPigeonFilter === id}
+                onClick={() => setBehaviorPigeonFilter(id)}
+              >
+                {id}
+              </FilterButton>
+            ))}
+          </div>
+
           {behaviorChartData.data.length === 0 ? (
             <SectionEmpty message="No behavior data for this period." />
           ) : (
@@ -391,7 +390,7 @@ export default function Insights() {
                       border: "1px solid #E7E5E4",
                     }}
                     formatter={(value: number, name: string) => [
-                      `${Math.round(value)}s`,
+                      formatDuration(value),
                       name.replace(/_/g, " "),
                     ]}
                   />
@@ -423,7 +422,7 @@ export default function Insights() {
             Social Map
           </h2>
           {pairwiseQuery.isError ? (
-            <SectionEmpty message="Failed to load social data." />
+            <SectionError message="Failed to load social data." onRetry={() => pairwiseQuery.refetch()} />
           ) : (pairwiseQuery.data?.pairs ?? []).length === 0 ? (
             <SectionEmpty message="No pairwise data for this period." />
           ) : (
@@ -450,22 +449,232 @@ export default function Insights() {
           </div>
 
           {droppingsQuery.isError ? (
-            <SectionEmpty message="Failed to load droppings data." />
+            <SectionError message="Failed to load droppings data." onRetry={() => droppingsQuery.refetch()} />
           ) : droppingsQuery.data?.grid?.length ? (
-            <HeatmapCanvas
-              grid={droppingsQuery.data.grid}
-              accent={[220, 38, 38]}
-            />
+            <>
+              <HeatmapCanvas
+                grid={droppingsQuery.data.grid}
+                accent={[220, 38, 38]}
+              />
+
+              {/* Zone breakdown */}
+              <p className="text-sm text-text-secondary mt-4">
+                Total:{" "}
+                <span className="font-medium text-text-primary">
+                  {droppingsQuery.data.total.toLocaleString()}
+                </span>{" "}
+                droppings detected
+              </p>
+
+              {Object.keys(droppingsQuery.data.by_zone ?? {}).length > 0 && (
+                <div className="h-36 mt-3">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={Object.entries(droppingsQuery.data.by_zone)
+                        .map(([zone, count]) => ({ zone, count }))
+                        .sort((a, b) => b.count - a.count)}
+                      layout="vertical"
+                      margin={{ left: 0, right: 16, top: 0, bottom: 0 }}
+                    >
+                      <XAxis type="number" hide />
+                      <YAxis
+                        type="category"
+                        dataKey="zone"
+                        width={80}
+                        tick={{ fontSize: 12, fill: "#78716C" }}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <Tooltip
+                        formatter={(value: number) => [value, "Droppings"]}
+                        contentStyle={{
+                          fontSize: 12,
+                          borderRadius: 8,
+                          border: "1px solid #E7E5E4",
+                        }}
+                      />
+                      <Bar dataKey="count" radius={[0, 4, 4, 0]} barSize={16} fill="#DC2626" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </>
           ) : (
             <SectionEmpty message="No droppings data for this period." />
           )}
         </section>
       )}
 
-      {/* ===== 5. Export Buttons ===== */}
+      {/* ===== 5. Compare Sessions ===== */}
+      <section className="bg-surface border border-border rounded-xl p-5">
+        <h2 className="text-sm font-semibold text-text-primary mb-4">
+          Compare Sessions
+        </h2>
+        <div className="flex flex-wrap items-center gap-3 mb-4">
+          <select
+            value={sessionA}
+            onChange={(e) => setSessionA(e.target.value)}
+            className="px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-colors"
+          >
+            <option value="">Session A</option>
+            {(sessionsQuery.data ?? []).map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+          <span className="text-sm text-text-secondary">vs</span>
+          <select
+            value={sessionB}
+            onChange={(e) => setSessionB(e.target.value)}
+            className="px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-colors"
+          >
+            <option value="">Session B</option>
+            {(sessionsQuery.data ?? []).map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {!sessionA || !sessionB || sessionA === sessionB ? (
+          <SectionEmpty message="Select two sessions to compare." />
+        ) : compareQuery.isLoading ? (
+          <div className="h-32 bg-border/20 rounded animate-pulse" />
+        ) : compareQuery.isError ? (
+          <SectionError message="Failed to load comparison." onRetry={() => compareQuery.refetch()} />
+        ) : compareQuery.data ? (
+          <div className="space-y-5">
+            {/* Zone Occupancy Changes */}
+            <div>
+              <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-2">
+                Zone Occupancy Changes
+              </h3>
+              {Object.keys(compareQuery.data.zone_occupancy_diff).length === 0 ? (
+                <SectionEmpty message="No zone occupancy changes." />
+              ) : (
+                <div className="space-y-1">
+                  {Object.entries(compareQuery.data.zone_occupancy_diff).map(
+                    ([pigeon, zones]) => (
+                      <div key={pigeon} className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                        <span className="font-medium text-text-primary w-24 shrink-0">
+                          {pigeon}
+                        </span>
+                        {Object.entries(zones).map(([zone, diff]) => (
+                          <span key={zone} className="text-text-secondary">
+                            {zone}{" "}
+                            <span
+                              className={
+                                diff > 0
+                                  ? "text-success"
+                                  : diff < 0
+                                    ? "text-error"
+                                    : "text-text-secondary"
+                              }
+                            >
+                              {diff > 0 ? "↑" : diff < 0 ? "↓" : "–"}
+                              {Math.abs(diff).toFixed(1)}%
+                            </span>
+                          </span>
+                        ))}
+                      </div>
+                    ),
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Behavior Changes */}
+            <div>
+              <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-2">
+                Behavior Changes
+              </h3>
+              {Object.keys(compareQuery.data.behavior_diff).length === 0 ? (
+                <SectionEmpty message="No behavior changes." />
+              ) : (
+                <div className="space-y-1">
+                  {Object.entries(compareQuery.data.behavior_diff).map(
+                    ([pigeon, behaviors]) => (
+                      <div key={pigeon} className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                        <span className="font-medium text-text-primary w-24 shrink-0">
+                          {pigeon}
+                        </span>
+                        {Object.entries(behaviors).map(([behavior, diff]) => (
+                          <span key={behavior} className="text-text-secondary">
+                            {behavior.replace(/_/g, " ")}{" "}
+                            <span
+                              className={
+                                diff.duration_diff > 0
+                                  ? "text-success"
+                                  : diff.duration_diff < 0
+                                    ? "text-error"
+                                    : "text-text-secondary"
+                              }
+                            >
+                              {diff.duration_diff > 0 ? "↑" : diff.duration_diff < 0 ? "↓" : "–"}
+                              {formatDuration(Math.abs(diff.duration_diff))}
+                            </span>
+                            {" "}
+                            <span className="text-text-secondary/60">
+                              ({diff.count_diff > 0 ? "+" : ""}
+                              {diff.count_diff} events)
+                            </span>
+                          </span>
+                        ))}
+                      </div>
+                    ),
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Identity Changes */}
+            <div>
+              <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-2">
+                Identity Changes
+              </h3>
+              <div className="flex flex-wrap gap-4 text-sm">
+                <div>
+                  <span className="text-text-secondary">Only in A: </span>
+                  {compareQuery.data.identity_changes.only_in_a.length === 0 ? (
+                    <span className="text-text-secondary/60">none</span>
+                  ) : (
+                    <span className="text-text-primary font-medium">
+                      {compareQuery.data.identity_changes.only_in_a.join(", ")}
+                    </span>
+                  )}
+                </div>
+                <div>
+                  <span className="text-text-secondary">Only in B: </span>
+                  {compareQuery.data.identity_changes.only_in_b.length === 0 ? (
+                    <span className="text-text-secondary/60">none</span>
+                  ) : (
+                    <span className="text-text-primary font-medium">
+                      {compareQuery.data.identity_changes.only_in_b.join(", ")}
+                    </span>
+                  )}
+                </div>
+                <div>
+                  <span className="text-text-secondary">In both: </span>
+                  {compareQuery.data.identity_changes.in_both.length === 0 ? (
+                    <span className="text-text-secondary/60">none</span>
+                  ) : (
+                    <span className="text-text-primary font-medium">
+                      {compareQuery.data.identity_changes.in_both.join(", ")}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </section>
+
+      {/* ===== 6. Export Buttons ===== */}
       <div className="flex items-center gap-3">
         <button
-          onClick={() => alert("PDF export coming soon")}
+          onClick={() => toast.success("PDF export coming soon — this feature is in development")}
           className="flex items-center gap-1.5 px-4 py-2 border border-border rounded-lg text-sm font-medium text-text-primary hover:bg-bg transition-colors"
         >
           <Download size={14} />

@@ -7,6 +7,10 @@ import {
   AlertTriangle,
   ChevronDown,
   Zap,
+  ArrowUpRight,
+  ArrowDownRight,
+  Minus,
+  X,
 } from "lucide-react";
 import {
   getClips,
@@ -22,6 +26,7 @@ import type { ClipWithLabel, TrainConfig } from "../api/training";
 import type { ModelRegistryEntry } from "../types";
 import LoadingState from "../components/ui/LoadingState";
 import EmptyState from "../components/ui/EmptyState";
+import SectionError from "../components/ui/SectionError";
 import { usePageTitle } from "../hooks/usePageTitle";
 
 /* ================================================================ */
@@ -112,6 +117,7 @@ function ClipLibraryTab({ onLabel }: { onLabel: (id: number) => void }) {
   const pigeonIds = [...new Set(clips.map((c) => c.pigeon_id).filter(Boolean))] as string[];
 
   if (clipsQuery.isLoading) return <LoadingState />;
+  if (clipsQuery.isError) return <SectionError message="Failed to load clips." onRetry={() => clipsQuery.refetch()} />;
 
   return (
     <div className="space-y-4">
@@ -216,11 +222,17 @@ function LabelClipsTab({
   const queryClient = useQueryClient();
 
   const clipsQuery = useQuery({
-    queryKey: ["training-clips", "all", "unlabeled"],
-    queryFn: () => getClips("all", "unlabeled"),
+    queryKey: ["training-clips", "all", "all"],
+    queryFn: () => getClips("all", "all"),
   });
 
-  const clips = clipsQuery.data?.clips ?? [];
+  const allClips = clipsQuery.data?.clips ?? [];
+  // Show unlabeled first, then labeled (for re-labeling)
+  const clips = [...allClips].sort((a, b) => {
+    if (a.label && !b.label) return 1;
+    if (!a.label && b.label) return -1;
+    return 0;
+  });
 
   // Find starting index
   const startIdx = preselectedId != null
@@ -276,9 +288,11 @@ function LabelClipsTab({
   }, [handleLabel]);
 
   if (clipsQuery.isLoading) return <LoadingState />;
+  if (clipsQuery.isError) return <SectionError message="Failed to load clips." onRetry={() => clipsQuery.refetch()} />;
 
-  const labeledCount = currentIdx;
+  const reviewedCount = currentIdx;
   const totalCount = clips.length;
+  const unlabeledCount = clips.filter((c) => !c.label).length;
   const currentClip = clips[currentIdx];
   const allDone = currentIdx >= totalCount;
 
@@ -288,11 +302,16 @@ function LabelClipsTab({
       <div>
         <div className="flex items-center justify-between mb-2">
           <span className="text-sm font-medium text-text-primary">
-            {labeledCount} of {totalCount} labeled
+            {reviewedCount} of {totalCount} reviewed
+            {unlabeledCount > 0 && (
+              <span className="text-text-secondary font-normal">
+                {" "}({unlabeledCount} unlabeled)
+              </span>
+            )}
           </span>
           <span className="text-[12px] text-text-secondary">
             {totalCount > 0
-              ? `${Math.round((labeledCount / totalCount) * 100)}%`
+              ? `${Math.round((reviewedCount / totalCount) * 100)}%`
               : "—"}
           </span>
         </div>
@@ -300,7 +319,7 @@ function LabelClipsTab({
           <div
             className="h-full bg-accent transition-all"
             style={{
-              width: `${totalCount > 0 ? (labeledCount / totalCount) * 100 : 0}%`,
+              width: `${totalCount > 0 ? (reviewedCount / totalCount) * 100 : 0}%`,
             }}
           />
         </div>
@@ -318,7 +337,7 @@ function LabelClipsTab({
       ) : (
         <>
           {/* Video placeholder */}
-          <div className="bg-black rounded-xl aspect-video flex items-center justify-center">
+          <div className="bg-black rounded-xl aspect-video flex items-center justify-center relative">
             <div className="text-center">
               <Play size={48} className="text-white/30 mx-auto mb-2" />
               <p className="text-white/40 text-sm">
@@ -326,13 +345,57 @@ function LabelClipsTab({
                 {currentClip.duration_seconds?.toFixed(1) ?? "?"}s
                 {currentClip.zone && ` · ${currentClip.zone}`}
               </p>
+              {currentClip.clip_path && (
+                <p className="text-white/25 text-[11px] mt-1 truncate max-w-md mx-auto px-4">
+                  {currentClip.clip_path}
+                </p>
+              )}
+              <p className="text-white/30 text-[11px] mt-1">
+                Frames {currentClip.start_frame} – {currentClip.end_frame}
+              </p>
             </div>
           </div>
+
+          {/* Context metadata */}
+          {(currentClip.extraction_reason || currentClip.velocity_context || currentClip.pairwise_context) && (
+            <div className="flex flex-wrap gap-2">
+              {currentClip.extraction_reason && (
+                <span className="px-2.5 py-1 text-[11px] bg-surface border border-border rounded-lg text-text-secondary">
+                  {currentClip.extraction_reason}
+                </span>
+              )}
+              {currentClip.velocity_context && (
+                <span className="px-2.5 py-1 text-[11px] bg-surface border border-border rounded-lg text-text-secondary">
+                  {currentClip.velocity_context}
+                </span>
+              )}
+              {currentClip.pairwise_context && (
+                <span className="px-2.5 py-1 text-[11px] bg-surface border border-border rounded-lg text-text-secondary">
+                  {currentClip.pairwise_context}
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Existing label indicator */}
+          {currentClip.label && (
+            <div className="flex items-center justify-between bg-success/5 border border-success/20 rounded-xl px-4 py-3">
+              <div className="flex items-center gap-2">
+                <Check size={14} className="text-success" />
+                <span className="text-sm text-text-primary">
+                  Previously labeled: <span className="font-medium">{currentClip.label}</span>
+                </span>
+              </div>
+              <span className="text-[11px] text-text-secondary">
+                Select a class below to re-label
+              </span>
+            </div>
+          )}
 
           {/* Behavior buttons */}
           <div>
             <p className="text-sm font-medium text-text-primary mb-3">
-              What behavior is this?
+              {currentClip.label ? "Re-label this clip:" : "What behavior is this?"}
             </p>
             <div className="grid grid-cols-4 gap-2">
               {BEHAVIOR_CLASSES.map((b, i) => (
@@ -375,6 +438,7 @@ function LabelClipsTab({
    Tab 3: Train Model
    ================================================================ */
 function TrainModelTab() {
+  const queryClient = useQueryClient();
   const [backbone, setBackbone] = useState("r3d_18");
   const [epochs, setEpochs] = useState(50);
   const [batchSize, setBatchSize] = useState(16);
@@ -392,7 +456,10 @@ function TrainModelTab() {
 
   const trainMutation = useMutation({
     mutationFn: (config: TrainConfig) => startTraining(config),
-    onSuccess: (data) => setJobId(data.job_id),
+    onSuccess: (data) => {
+      setJobId(data.job_id);
+      queryClient.invalidateQueries({ queryKey: ["models"] });
+    },
   });
 
   const statusQuery = useQuery({
@@ -420,7 +487,15 @@ function TrainModelTab() {
     });
   }
 
+  const configErrors = {
+    epochs: epochs < 1 || epochs > 500 ? "Must be 1–500." : null,
+    batchSize: batchSize < 1 || batchSize > 256 ? "Must be 1–256." : null,
+    lr: lr < 0.00001 || lr > 1 ? "Must be 0.00001–1.0." : null,
+  };
+  const hasConfigError = Object.values(configErrors).some(Boolean);
+
   function launch() {
+    if (hasConfigError) return;
     trainMutation.mutate({
       backbone,
       epochs,
@@ -444,6 +519,8 @@ function TrainModelTab() {
               <div key={i} className="h-5 bg-border/30 rounded animate-pulse" />
             ))}
           </div>
+        ) : readinessQuery.isError ? (
+          <SectionError message="Failed to load readiness." onRetry={() => readinessQuery.refetch()} />
         ) : (
           <>
             {readiness && (
@@ -536,9 +613,16 @@ function TrainModelTab() {
               min={1}
               max={500}
               value={epochs}
-              onChange={(e) => setEpochs(Number(e.target.value) || 50)}
-              className="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-colors"
+              onChange={(e) => setEpochs(Number(e.target.value) || 0)}
+              className={`w-full px-3 py-2 bg-bg border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 transition-colors ${
+                configErrors.epochs
+                  ? "border-error focus:ring-error/30 focus:border-error"
+                  : "border-border focus:ring-accent/30 focus:border-accent"
+              }`}
             />
+            {configErrors.epochs && (
+              <p className="text-[12px] text-error mt-1">{configErrors.epochs}</p>
+            )}
           </div>
 
           <div>
@@ -550,9 +634,16 @@ function TrainModelTab() {
               min={1}
               max={256}
               value={batchSize}
-              onChange={(e) => setBatchSize(Number(e.target.value) || 16)}
-              className="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-colors"
+              onChange={(e) => setBatchSize(Number(e.target.value) || 0)}
+              className={`w-full px-3 py-2 bg-bg border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 transition-colors ${
+                configErrors.batchSize
+                  ? "border-error focus:ring-error/30 focus:border-error"
+                  : "border-border focus:ring-accent/30 focus:border-accent"
+              }`}
             />
+            {configErrors.batchSize && (
+              <p className="text-[12px] text-error mt-1">{configErrors.batchSize}</p>
+            )}
           </div>
 
           <div>
@@ -565,9 +656,16 @@ function TrainModelTab() {
               min={0.00001}
               max={1}
               value={lr}
-              onChange={(e) => setLr(Number(e.target.value) || 0.001)}
-              className="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-colors"
+              onChange={(e) => setLr(Number(e.target.value) || 0)}
+              className={`w-full px-3 py-2 bg-bg border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 transition-colors ${
+                configErrors.lr
+                  ? "border-error focus:ring-error/30 focus:border-error"
+                  : "border-border focus:ring-accent/30 focus:border-accent"
+              }`}
             />
+            {configErrors.lr && (
+              <p className="text-[12px] text-error mt-1">{configErrors.lr}</p>
+            )}
           </div>
         </div>
 
@@ -613,7 +711,7 @@ function TrainModelTab() {
       <div className="space-y-3">
         <button
           onClick={launch}
-          disabled={trainMutation.isPending || selectedClasses.size === 0}
+          disabled={trainMutation.isPending || selectedClasses.size === 0 || hasConfigError}
           className="flex items-center gap-2 px-5 py-2.5 bg-accent text-white text-sm font-medium rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {trainMutation.isPending ? (
@@ -664,7 +762,11 @@ function TrainModelTab() {
    ================================================================ */
 function ModelHistoryTab() {
   const queryClient = useQueryClient();
-  const [confirmReinfer, setConfirmReinfer] = useState(false);
+  const [showReinfer, setShowReinfer] = useState(false);
+  const [skipAlreadyInferred, setSkipAlreadyInferred] = useState(true);
+  const [onlyApproved, setOnlyApproved] = useState(false);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [showComparison, setShowComparison] = useState(false);
 
   const modelsQuery = useQuery({
     queryKey: ["models"],
@@ -678,13 +780,34 @@ function ModelHistoryTab() {
   });
 
   const reinferMutation = useMutation({
-    mutationFn: () => reinferVideos({}),
-    onSuccess: () => setConfirmReinfer(false),
+    mutationFn: (opts: { skip_already_inferred: boolean; only_approved_videos: boolean }) =>
+      reinferVideos(opts),
   });
 
   const models = modelsQuery.data ?? [];
+  const activeModel = models.find((m) => m.is_active) ?? null;
+
+  function toggleSelect(id: number) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        if (next.size >= 2) return prev;
+        next.add(id);
+      }
+      return next;
+    });
+    setShowComparison(false);
+  }
+
+  const selectedIds = Array.from(selected);
+  const canCompare = selectedIds.length === 2;
+  const comparedA = models.find((m) => m.id === selectedIds[0]);
+  const comparedB = models.find((m) => m.id === selectedIds[1]);
 
   if (modelsQuery.isLoading) return <LoadingState />;
+  if (modelsQuery.isError) return <SectionError message="Failed to load models." onRetry={() => modelsQuery.refetch()} />;
 
   if (models.length === 0) {
     return (
@@ -704,6 +827,7 @@ function ModelHistoryTab() {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-[12px] text-text-secondary uppercase tracking-wider bg-bg/50">
+                <th className="w-10 px-3 py-3" />
                 <th className="text-left px-4 py-3 font-medium">Version</th>
                 <th className="text-left px-4 py-3 font-medium">Created</th>
                 <th className="text-right px-4 py-3 font-medium">Train</th>
@@ -720,6 +844,9 @@ function ModelHistoryTab() {
                   model={m}
                   onActivate={() => activateMutation.mutate(m.id)}
                   isActivating={activateMutation.isPending}
+                  checked={selected.has(m.id)}
+                  onToggle={() => toggleSelect(m.id)}
+                  disableCheck={!selected.has(m.id) && selected.size >= 2}
                 />
               ))}
             </tbody>
@@ -727,54 +854,150 @@ function ModelHistoryTab() {
         </div>
       </div>
 
+      {/* Compare button */}
+      {canCompare && !showComparison && (
+        <button
+          onClick={() => setShowComparison(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-accent text-white text-sm font-medium rounded-lg hover:bg-accent/90 transition-colors"
+        >
+          Compare Selected
+        </button>
+      )}
+
+      {/* Comparison panel */}
+      {showComparison && comparedA && comparedB && (
+        <ModelComparison
+          modelA={comparedA}
+          modelB={comparedB}
+          onClose={() => {
+            setShowComparison(false);
+            setSelected(new Set());
+          }}
+        />
+      )}
+
       {/* Reinfer */}
       <div>
-        {confirmReinfer ? (
-          <div className="bg-warning/5 border border-warning/30 rounded-xl p-4 flex items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <AlertTriangle size={16} className="text-warning shrink-0" />
-              <span className="text-sm text-text-primary">
-                This will re-run inference on all videos with the active model. Continue?
-              </span>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
+        {showReinfer ? (
+          <div className="bg-surface border border-border rounded-xl p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-text-primary">
+                Re-Infer Videos
+              </h3>
               <button
-                onClick={() => setConfirmReinfer(false)}
-                className="px-3 py-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors"
+                onClick={() => setShowReinfer(false)}
+                className="p-1 rounded-md hover:bg-bg text-text-secondary hover:text-text-primary transition-colors"
               >
-                Cancel
+                <X size={16} />
               </button>
+            </div>
+
+            {/* Active model info */}
+            {activeModel && (
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-text-secondary">Model:</span>
+                <span className="font-medium text-text-primary">
+                  {activeModel.version ?? activeModel.model_name}
+                </span>
+                <span className="px-2 py-0.5 bg-success/10 text-success text-[11px] font-medium rounded-full">
+                  Active
+                </span>
+              </div>
+            )}
+            {!activeModel && (
+              <div className="flex items-center gap-2 text-sm text-warning">
+                <AlertTriangle size={14} />
+                No active model set. Activate a model first.
+              </div>
+            )}
+
+            {/* Options */}
+            <div className="space-y-2.5">
+              <label className="flex items-center gap-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={skipAlreadyInferred}
+                  onChange={(e) => setSkipAlreadyInferred(e.target.checked)}
+                  className="w-4 h-4 rounded border-border text-accent focus:ring-accent/30"
+                />
+                <div>
+                  <span className="text-sm text-text-primary">
+                    Skip videos already inferred with this model
+                  </span>
+                  <p className="text-[11px] text-text-secondary">
+                    Only process videos that haven't been analyzed by the active model
+                  </p>
+                </div>
+              </label>
+              <label className="flex items-center gap-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={onlyApproved}
+                  onChange={(e) => setOnlyApproved(e.target.checked)}
+                  className="w-4 h-4 rounded border-border text-accent focus:ring-accent/30"
+                />
+                <div>
+                  <span className="text-sm text-text-primary">
+                    Only approved videos
+                  </span>
+                  <p className="text-[11px] text-text-secondary">
+                    Restrict to videos that have passed QC review
+                  </p>
+                </div>
+              </label>
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex items-center gap-3 pt-1">
               <button
-                onClick={() => reinferMutation.mutate()}
-                disabled={reinferMutation.isPending}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-warning text-white text-sm font-medium rounded-lg hover:bg-warning/90 transition-colors disabled:opacity-50"
+                onClick={() =>
+                  reinferMutation.mutate({
+                    skip_already_inferred: skipAlreadyInferred,
+                    only_approved_videos: onlyApproved,
+                  })
+                }
+                disabled={reinferMutation.isPending || !activeModel}
+                className="flex items-center gap-1.5 px-4 py-2 bg-warning text-white text-sm font-medium rounded-lg hover:bg-warning/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {reinferMutation.isPending && (
                   <Loader2 size={14} className="animate-spin" />
                 )}
-                Yes, Re-Infer All
+                Start Re-Inference
+              </button>
+              <button
+                onClick={() => setShowReinfer(false)}
+                className="px-3 py-2 text-sm text-text-secondary hover:text-text-primary transition-colors"
+              >
+                Cancel
               </button>
             </div>
+
+            {/* Result */}
+            {reinferMutation.isSuccess && reinferMutation.data && (
+              <div className="flex items-center gap-2 bg-success/5 border border-success/20 rounded-lg px-4 py-3">
+                <Check size={14} className="text-success shrink-0" />
+                <span className="text-sm text-text-primary">
+                  Re-inference started: {reinferMutation.data.videos_eligible} videos
+                  eligible, {reinferMutation.data.videos_skipped} skipped.
+                </span>
+              </div>
+            )}
+            {reinferMutation.isError && (
+              <p className="text-sm text-error">
+                Failed to start re-inference. Please try again.
+              </p>
+            )}
           </div>
         ) : (
           <button
-            onClick={() => setConfirmReinfer(true)}
+            onClick={() => {
+              reinferMutation.reset();
+              setShowReinfer(true);
+            }}
             className="px-4 py-2 border border-border rounded-lg text-sm font-medium text-text-primary hover:bg-bg transition-colors"
           >
             Apply to All Videos
           </button>
-        )}
-
-        {reinferMutation.isSuccess && reinferMutation.data && (
-          <p className="text-sm text-success mt-2">
-            Re-inference started: {reinferMutation.data.videos_eligible} videos
-            eligible, {reinferMutation.data.videos_skipped} skipped.
-          </p>
-        )}
-        {reinferMutation.isError && (
-          <p className="text-sm text-error mt-2">
-            Failed to start re-inference.
-          </p>
         )}
       </div>
     </div>
@@ -785,16 +1008,31 @@ function ModelRow({
   model,
   onActivate,
   isActivating,
+  checked,
+  onToggle,
+  disableCheck,
 }: {
   model: ModelRegistryEntry;
   onActivate: () => void;
   isActivating: boolean;
+  checked: boolean;
+  onToggle: () => void;
+  disableCheck: boolean;
 }) {
   const fmt = (v: number | null) =>
     v != null ? `${(v * 100).toFixed(1)}%` : "—";
 
   return (
-    <tr>
+    <tr className={checked ? "bg-accent/5" : ""}>
+      <td className="px-3 py-3 text-center">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={onToggle}
+          disabled={disableCheck}
+          className="w-4 h-4 rounded border-border text-accent focus:ring-accent/30 disabled:opacity-30"
+        />
+      </td>
       <td className="px-4 py-3 text-text-primary font-medium">
         {model.version ?? model.model_name}
       </td>
@@ -835,6 +1073,194 @@ function ModelRow({
       </td>
     </tr>
   );
+}
+
+/* ================================================================
+   Model Comparison Panel
+   ================================================================ */
+function parseConfig(raw: string | null): Record<string, unknown> {
+  if (!raw) return {};
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+function AccuracyCell({
+  label,
+  valA,
+  valB,
+}: {
+  label: string;
+  valA: number | null;
+  valB: number | null;
+}) {
+  const fmt = (v: number | null) => (v != null ? `${(v * 100).toFixed(1)}%` : "—");
+  const diff =
+    valA != null && valB != null ? valB - valA : null;
+
+  return (
+    <div className="text-center space-y-1">
+      <p className="text-[11px] text-text-secondary uppercase tracking-wider">{label}</p>
+      <div className="flex items-center justify-center gap-3">
+        <span className="text-sm tabular-nums text-text-primary">{fmt(valA)}</span>
+        <span className="text-text-secondary/40">→</span>
+        <span className="text-sm tabular-nums text-text-primary">{fmt(valB)}</span>
+      </div>
+      {diff != null && (
+        <div className="flex items-center justify-center gap-0.5">
+          {diff > 0.001 ? (
+            <ArrowUpRight size={12} className="text-success" />
+          ) : diff < -0.001 ? (
+            <ArrowDownRight size={12} className="text-error" />
+          ) : (
+            <Minus size={12} className="text-text-secondary" />
+          )}
+          <span
+            className={`text-[11px] font-medium tabular-nums ${
+              diff > 0.001 ? "text-success" : diff < -0.001 ? "text-error" : "text-text-secondary"
+            }`}
+          >
+            {diff > 0 ? "+" : ""}
+            {(diff * 100).toFixed(1)}pp
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ModelComparison({
+  modelA,
+  modelB,
+  onClose,
+}: {
+  modelA: ModelRegistryEntry;
+  modelB: ModelRegistryEntry;
+  onClose: () => void;
+}) {
+  const nameA = modelA.version ?? modelA.model_name;
+  const nameB = modelB.version ?? modelB.model_name;
+  const configA = parseConfig(modelA.training_config);
+  const configB = parseConfig(modelB.training_config);
+
+  // Collect all config keys
+  const allKeys = Array.from(
+    new Set([...Object.keys(configA), ...Object.keys(configB)]),
+  ).sort();
+
+  // Find differences
+  const configDiffs = allKeys.map((key) => ({
+    key,
+    valA: configA[key],
+    valB: configB[key],
+    changed: JSON.stringify(configA[key]) !== JSON.stringify(configB[key]),
+  }));
+
+  return (
+    <div className="bg-surface border border-border rounded-xl overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between px-5 py-3 border-b border-border bg-bg/30">
+        <h3 className="text-sm font-semibold text-text-primary">
+          Comparing: {nameA} vs {nameB}
+        </h3>
+        <button
+          onClick={onClose}
+          className="p-1 rounded-md hover:bg-bg text-text-secondary hover:text-text-primary transition-colors"
+        >
+          <X size={16} />
+        </button>
+      </div>
+
+      <div className="p-5 space-y-6">
+        {/* Accuracy comparison */}
+        <div>
+          <p className="text-[12px] font-medium text-text-secondary uppercase tracking-wider mb-3">
+            Accuracy Metrics
+          </p>
+          <div className="grid grid-cols-3 gap-4 bg-bg/50 rounded-xl p-4">
+            <AccuracyCell label="Train" valA={modelA.train_accuracy} valB={modelB.train_accuracy} />
+            <AccuracyCell label="Validation" valA={modelA.val_accuracy} valB={modelB.val_accuracy} />
+            <AccuracyCell label="Test" valA={modelA.test_accuracy} valB={modelB.test_accuracy} />
+          </div>
+        </div>
+
+        {/* Training clips comparison */}
+        <div>
+          <p className="text-[12px] font-medium text-text-secondary uppercase tracking-wider mb-3">
+            Training Clips
+          </p>
+          <div className="flex items-center gap-3 text-sm">
+            <span className="text-text-primary tabular-nums">{modelA.training_clips ?? "—"}</span>
+            <span className="text-text-secondary/40">→</span>
+            <span className="text-text-primary tabular-nums">{modelB.training_clips ?? "—"}</span>
+            {modelA.training_clips != null && modelB.training_clips != null && modelB.training_clips !== modelA.training_clips && (
+              <span
+                className={`text-[11px] font-medium ${
+                  modelB.training_clips > modelA.training_clips ? "text-success" : "text-warning"
+                }`}
+              >
+                ({modelB.training_clips > modelA.training_clips ? "+" : ""}
+                {modelB.training_clips - modelA.training_clips})
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Config differences */}
+        {configDiffs.length > 0 && (
+          <div>
+            <p className="text-[12px] font-medium text-text-secondary uppercase tracking-wider mb-3">
+              Training Configuration
+            </p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-[11px] text-text-secondary uppercase tracking-wider">
+                    <th className="text-left pb-2 font-medium">Parameter</th>
+                    <th className="text-right pb-2 font-medium">{nameA}</th>
+                    <th className="text-right pb-2 font-medium">{nameB}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {configDiffs.map(({ key, valA, valB, changed }) => (
+                    <tr key={key} className={changed ? "bg-warning/5" : ""}>
+                      <td className="py-2 text-text-primary">{key}</td>
+                      <td className="py-2 text-right tabular-nums text-text-secondary">
+                        {formatConfigValue(valA)}
+                      </td>
+                      <td
+                        className={`py-2 text-right tabular-nums ${
+                          changed ? "text-accent font-medium" : "text-text-secondary"
+                        }`}
+                      >
+                        {formatConfigValue(valB)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {configDiffs.some((d) => d.changed) && (
+              <p className="text-[11px] text-text-secondary mt-2">
+                Highlighted rows indicate changes between models.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function formatConfigValue(v: unknown): string {
+  if (v === undefined) return "—";
+  if (v === null) return "null";
+  if (typeof v === "boolean") return v ? "true" : "false";
+  if (Array.isArray(v)) return v.join(", ");
+  if (typeof v === "object") return JSON.stringify(v);
+  return String(v);
 }
 
 /* ================================================================

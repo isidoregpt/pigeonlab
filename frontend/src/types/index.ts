@@ -124,18 +124,6 @@ export interface QCFlag {
   resolved_action: string | null;
 }
 
-export interface ReviewTask {
-  id: number;
-  task_type: string;
-  reference_id: number | null;
-  video_id: number | null;
-  priority: "low" | "normal" | "high" | "urgent";
-  status: "pending" | "in_progress" | "completed" | "skipped";
-  assigned_to: string | null;
-  created_at: string | null;
-  completed_at: string | null;
-}
-
 export interface ModelRegistryEntry {
   id: number;
   model_name: string;
@@ -150,18 +138,6 @@ export interface ModelRegistryEntry {
   created_at: string | null;
   notes: string | null;
   is_active: boolean;
-}
-
-export interface BenchmarkResult {
-  id: number;
-  subsystem: string;
-  benchmark_name: string;
-  model_version: string | null;
-  metric_name: string;
-  metric_value: number | null;
-  sample_size: number | null;
-  run_at: string | null;
-  config_used: string | null;
 }
 
 export interface AttentionItem {

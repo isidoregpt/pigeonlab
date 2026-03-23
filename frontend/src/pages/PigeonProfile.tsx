@@ -14,10 +14,14 @@ import { ArrowLeft, Pencil, Check, X, Loader2 } from "lucide-react";
 import {
   getPigeon,
   getPigeonBehaviors,
+  getPigeonHeatmap,
   getPigeonIdentityStatus,
   updatePigeon,
 } from "../api/pigeons";
 import { usePageTitle } from "../hooks/usePageTitle";
+import HeatmapCanvas from "../components/ui/HeatmapCanvas";
+import LoadingState from "../components/ui/LoadingState";
+import { formatRelativeTime, formatDuration } from "../utils/formatTime";
 
 const ZONE_COLORS = [
   "#0D9488", // accent
@@ -59,6 +63,7 @@ export default function PigeonProfile() {
   const [editing, setEditing] = useState(false);
   const [editMarkers, setEditMarkers] = useState("");
   const [editNotes, setEditNotes] = useState("");
+  const [heatmapPeriod, setHeatmapPeriod] = useState<"day" | "week" | "month">("week");
 
   // Fetch all three in parallel
   const profileQuery = useQuery({
@@ -79,6 +84,12 @@ export default function PigeonProfile() {
     enabled: pigeonId.length > 0,
   });
 
+  const heatmapQuery = useQuery({
+    queryKey: ["pigeon-heatmap", pigeonId, heatmapPeriod],
+    queryFn: () => getPigeonHeatmap(pigeonId, heatmapPeriod),
+    enabled: pigeonId.length > 0,
+  });
+
   const saveMutation = useMutation({
     mutationFn: () =>
       updatePigeon(pigeonId, {
@@ -87,6 +98,7 @@ export default function PigeonProfile() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["pigeon", pigeonId] });
+      queryClient.invalidateQueries({ queryKey: ["pigeons"] });
       setEditing(false);
     },
   });
@@ -118,6 +130,8 @@ export default function PigeonProfile() {
     setEditNotes(pigeon?.notes ?? "");
     setEditing(true);
   }
+
+  if (profileQuery.isLoading) return <LoadingState variant="profile" />;
 
   // Top-level error for profile
   if (profileQuery.isError) {
@@ -168,8 +182,12 @@ export default function PigeonProfile() {
                   type="text"
                   value={editMarkers}
                   onChange={(e) => setEditMarkers(e.target.value)}
+                  maxLength={200}
                   className="w-full max-w-md px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-colors"
                 />
+                <p className="text-[11px] text-text-secondary/60 mt-1">
+                  {editMarkers.length}/200
+                </p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-text-primary mb-1">
@@ -220,6 +238,22 @@ export default function PigeonProfile() {
                       {pigeon.physical_markers}
                     </p>
                   )}
+                  {pigeon.notes && (
+                    <p className="text-sm text-text-secondary/70 mt-1">
+                      {pigeon.notes}
+                    </p>
+                  )}
+                  <div className="flex items-center gap-3 mt-2 text-xs text-text-secondary">
+                    {pigeon.first_seen && (
+                      <span>First seen {formatRelativeTime(pigeon.first_seen)}</span>
+                    )}
+                    {pigeon.last_seen && (
+                      <span>Last seen {formatRelativeTime(pigeon.last_seen)}</span>
+                    )}
+                    {pigeon.total_frames_observed > 0 && (
+                      <span>Observed in {pigeon.total_frames_observed.toLocaleString()} frames</span>
+                    )}
+                  </div>
                 </div>
               </div>
               <button
@@ -234,13 +268,46 @@ export default function PigeonProfile() {
         </div>
       ) : null}
 
-      {/* ===== Where [Name] Spends Time ===== */}
+      {/* ===== Heatmap ===== */}
+      <div className="bg-surface border border-border rounded-xl p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-semibold text-text-primary">
+            Where {pigeon?.pigeon_id ?? "Pigeon"} Spends Time
+          </h2>
+          <div className="flex items-center gap-1">
+            {(["day", "week", "month"] as const).map((p) => (
+              <button
+                key={p}
+                onClick={() => setHeatmapPeriod(p)}
+                className={`px-2.5 py-1 text-[11px] font-medium rounded-lg transition-colors ${
+                  heatmapPeriod === p
+                    ? "bg-accent text-white"
+                    : "text-text-secondary hover:text-text-primary hover:bg-bg"
+                }`}
+              >
+                {p === "day" ? "Day" : p === "week" ? "Week" : "Month"}
+              </button>
+            ))}
+          </div>
+        </div>
+        {heatmapQuery.isLoading ? (
+          <div className="h-48 bg-border/20 rounded animate-pulse" />
+        ) : heatmapQuery.data?.grid?.length ? (
+          <HeatmapCanvas grid={heatmapQuery.data.grid} />
+        ) : (
+          <p className="text-sm text-text-secondary py-6 text-center">
+            No heatmap data for this period.
+          </p>
+        )}
+      </div>
+
+      {/* ===== Zone Breakdown ===== */}
       {profileQuery.isLoading ? (
         <SectionSkeleton rows={4} />
       ) : zoneData.length > 0 ? (
         <div className="bg-surface border border-border rounded-xl p-5">
           <h2 className="text-sm font-semibold text-text-primary mb-4">
-            Where {pigeon?.pigeon_id} Spends Time
+            Zone Breakdown
           </h2>
           <div className="h-48">
             <ResponsiveContainer width="100%" height="100%">
@@ -306,7 +373,7 @@ export default function PigeonProfile() {
       ) : !profileQuery.isLoading ? (
         <div className="bg-surface border border-border rounded-xl p-5">
           <h2 className="text-sm font-semibold text-text-primary mb-2">
-            Where {pigeon?.pigeon_id} Spends Time
+            Zone Breakdown
           </h2>
           <p className="text-sm text-text-secondary">
             No zone data available yet.
@@ -340,7 +407,7 @@ export default function PigeonProfile() {
                 />
                 <Tooltip
                   formatter={(value: number) => [
-                    `${Math.round(value)}s (${Math.round(value / 60)}m)`,
+                    formatDuration(value),
                     "Duration",
                   ]}
                   contentStyle={{

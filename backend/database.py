@@ -1,4 +1,5 @@
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
 
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "pigeonlab.db"
@@ -10,11 +11,26 @@ def get_db_path() -> str:
 
 
 def get_connection() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(DB_PATH))
+    try:
+        conn = sqlite3.connect(str(DB_PATH))
+    except sqlite3.Error as exc:
+        raise RuntimeError(
+            f"Failed to open database at {DB_PATH}: {exc}"
+        ) from exc
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.row_factory = sqlite3.Row
     return conn
+
+
+@contextmanager
+def get_db():
+    """Context manager that yields a connection and guarantees close on exit."""
+    conn = get_connection()
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 
 def init_db():
@@ -59,7 +75,8 @@ def init_db():
             review_status TEXT DEFAULT 'raw',
             assigned_at TEXT,
             reviewed_at TEXT,
-            reviewed_by TEXT
+            reviewed_by TEXT,
+            created_at TEXT
         );
 
         CREATE TABLE IF NOT EXISTS identity_reviews (
@@ -204,7 +221,8 @@ def init_db():
             severity TEXT,
             reason TEXT,
             review_status TEXT DEFAULT 'pending',
-            resolved_action TEXT
+            resolved_action TEXT,
+            created_at TEXT
         );
 
         CREATE TABLE IF NOT EXISTS review_tasks (
@@ -296,6 +314,16 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_bench_subsystem ON benchmark_results(subsystem);
         CREATE INDEX IF NOT EXISTS idx_bench_model ON benchmark_results(model_version);
     """)
+
+    # Migrations for existing databases
+    for stmt in [
+        "ALTER TABLE qc_flags ADD COLUMN created_at TEXT",
+        "ALTER TABLE video_assignments ADD COLUMN created_at TEXT",
+    ]:
+        try:
+            cur.execute(stmt)
+        except Exception:
+            pass  # column already exists
 
     conn.commit()
     conn.close()
