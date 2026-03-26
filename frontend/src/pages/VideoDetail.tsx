@@ -448,6 +448,11 @@ export default function VideoDetail() {
               className="w-full px-4 py-2 text-sm font-medium border border-border rounded-lg hover:bg-bg transition-colors text-text-primary"
             >
               Review QC Flags
+              {(qcQuery.data?.length ?? 0) > 0 && (
+                <span className="ml-1.5 text-warning text-xs font-medium">
+                  ({qcQuery.data!.length} pending)
+                </span>
+              )}
             </button>
 
             {video.review_status === "reviewed" && (
