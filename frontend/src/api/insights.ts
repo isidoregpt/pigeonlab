@@ -8,8 +8,8 @@ interface HeatmapResponse {
   height: number;
 }
 
-export function getInsightsHeatmap(pigeons = "all", period = "week") {
-  return get<HeatmapResponse>(`/insights/heatmap?pigeons=${pigeons}&period=${period}`);
+export function getInsightsHeatmap(pigeons = "all", period = "week", approvedOnly = true) {
+  return get<HeatmapResponse>(`/insights/heatmap?pigeons=${pigeons}&period=${period}&approved_only=${approvedOnly}`);
 }
 
 // --- Behaviors ---
@@ -19,9 +19,9 @@ interface BehaviorSummary {
   event_count: number;
 }
 
-export function getInsightsBehaviors(period = "week") {
+export function getInsightsBehaviors(period = "week", approvedOnly = true) {
   return get<{ pigeons: Record<string, Record<string, BehaviorSummary>> }>(
-    `/insights/behaviors?period=${period}`,
+    `/insights/behaviors?period=${period}&approved_only=${approvedOnly}`,
   );
 }
 

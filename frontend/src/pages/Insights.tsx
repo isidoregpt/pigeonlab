@@ -169,6 +169,7 @@ export default function Insights() {
   const [sessionB, setSessionB] = useState("");
   const [comparePigeonA, setComparePigeonA] = useState("");
   const [comparePigeonB, setComparePigeonB] = useState("");
+  const [includeRejected, setIncludeRejected] = useState(false);
 
   // Fetch registered pigeons for filter buttons
   const pigeonsQuery = useQuery({
@@ -178,14 +179,16 @@ export default function Insights() {
   const pigeonIds = (pigeonsQuery.data ?? []).map((p) => p.pigeon_id);
 
   // Section queries
+  const approvedOnly = !includeRejected;
+
   const heatmapQuery = useQuery({
-    queryKey: ["insights-heatmap", pigeonFilter, period],
-    queryFn: () => getInsightsHeatmap(pigeonFilter, period),
+    queryKey: ["insights-heatmap", pigeonFilter, period, approvedOnly],
+    queryFn: () => getInsightsHeatmap(pigeonFilter, period, approvedOnly),
   });
 
   const behaviorsQuery = useQuery({
-    queryKey: ["insights-behaviors", period],
-    queryFn: () => getInsightsBehaviors(period),
+    queryKey: ["insights-behaviors", period, approvedOnly],
+    queryFn: () => getInsightsBehaviors(period, approvedOnly),
   });
 
   const pairwiseQuery = useQuery({
@@ -296,6 +299,17 @@ export default function Insights() {
             All Cameras
             <ChevronDown size={14} />
           </button>
+
+          {/* Include rejected toggle */}
+          <label className="flex items-center gap-2 px-3 py-2 bg-surface border border-border rounded-lg text-sm cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={includeRejected}
+              onChange={(e) => setIncludeRejected(e.target.checked)}
+              className="rounded border-border text-accent focus:ring-accent/30"
+            />
+            <span className="text-text-secondary">Include rejected</span>
+          </label>
         </div>
       </div>
 

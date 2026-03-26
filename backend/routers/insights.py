@@ -19,6 +19,7 @@ def _period_clause(period: str) -> tuple[str, list]:
 async def insights_heatmap(
     pigeons: str = Query("all"),
     period: str = Query("week"),
+    approved_only: bool = Query(True),
 ):
     with get_db() as conn:
         period_sql, params = _period_clause(period)
@@ -31,12 +32,14 @@ async def insights_heatmap(
                 pigeon_sql = f"AND f.pigeon_id IN ({placeholders})"
                 params.extend(ids)
 
+        review_sql = "AND v.review_status = 'approved'" if approved_only else ""
+
         rows = conn.execute(
             f"""SELECT f.centroid_x, f.centroid_y
                 FROM features f
                 JOIN videos v ON f.video_id = v.video_id
                 WHERE f.centroid_x IS NOT NULL AND f.centroid_y IS NOT NULL
-                  {period_sql} {pigeon_sql}""",
+                  {period_sql} {pigeon_sql} {review_sql}""",
             params,
         ).fetchall()
 
@@ -64,16 +67,20 @@ async def insights_heatmap(
 
 
 @router.get("/behaviors")
-async def insights_behaviors(period: str = Query("week")):
+async def insights_behaviors(
+    period: str = Query("week"),
+    approved_only: bool = Query(True),
+):
     with get_db() as conn:
         period_sql, params = _period_clause(period)
+        review_sql = "AND v.review_status = 'approved'" if approved_only else ""
 
         rows = conn.execute(
             f"""SELECT b.pigeon_id, b.behavior,
                        SUM(b.duration_seconds) AS total_dur, COUNT(*) AS cnt
                 FROM behaviors b
                 JOIN videos v ON b.video_id = v.video_id
-                WHERE 1=1 {period_sql}
+                WHERE 1=1 {period_sql} {review_sql}
                 GROUP BY b.pigeon_id, b.behavior""",
             params,
         ).fetchall()
