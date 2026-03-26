@@ -315,7 +315,9 @@ export default function VideoDetail() {
             </h2>
             {features.length === 0 ? (
               <p className="text-sm text-text-secondary">
-                No pigeon data for this frame.
+                {video.processing_status !== "completed"
+                  ? "This video hasn't been processed yet."
+                  : "No pigeons detected in this frame."}
               </p>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
