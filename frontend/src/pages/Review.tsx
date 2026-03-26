@@ -77,6 +77,7 @@ function IdentityReview({ videoId }: { videoId: number }) {
   const queryClient = useQueryClient();
   const [currentIdx, setCurrentIdx] = useState(0);
   const [showRegisterModal, setShowRegisterModal] = useState(false);
+  const [pendingPigeonId, setPendingPigeonId] = useState<string | null>(null);
   const navigate = useNavigate();
   const toast = useToast();
 
@@ -121,9 +122,11 @@ function IdentityReview({ videoId }: { videoId: number }) {
       queryClient.invalidateQueries({ queryKey: ["attention-count"] });
       queryClient.invalidateQueries({ queryKey: ["attention-items"] });
       queryClient.invalidateQueries({ queryKey: ["stats-today"] });
+      setPendingPigeonId(null);
       advance();
     },
     onError: () => {
+      setPendingPigeonId(null);
       toast.error("Failed to confirm identity. Please try again.");
     },
   });
@@ -237,18 +240,23 @@ function IdentityReview({ videoId }: { videoId: number }) {
           {pigeons.map((p) => (
             <button
               key={p.pigeon_id}
-              onClick={() =>
+              onClick={() => {
+                setPendingPigeonId(p.pigeon_id);
                 confirmMutation.mutate({
                   assignmentId: current.id,
                   pigeonId: p.pigeon_id,
                   originalPigeonId: current.pigeon_id,
-                })
-              }
+                });
+              }}
               disabled={confirmMutation.isPending}
               className="bg-surface border border-border rounded-xl p-4 text-left hover:border-accent hover:shadow-md transition-all group disabled:opacity-50"
             >
               <div className="flex items-center gap-3">
-                <span className="text-xl">🕊️</span>
+                {confirmMutation.isPending && pendingPigeonId === p.pigeon_id ? (
+                  <Loader2 size={20} className="animate-spin text-accent shrink-0" />
+                ) : (
+                  <span className="text-xl">🕊️</span>
+                )}
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-text-primary group-hover:text-accent truncate">
                     {p.pigeon_id}
