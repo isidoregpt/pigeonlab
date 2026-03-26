@@ -352,11 +352,14 @@ function LabelClipsTab({
               </p>
               {currentClip.clip_path && (
                 <p className="text-white/25 text-[11px] mt-1 truncate max-w-md mx-auto px-4">
-                  {currentClip.clip_path}
+                  {currentClip.clip_path.split("/").pop()}
                 </p>
               )}
               <p className="text-white/30 text-[11px] mt-1">
                 Frames {currentClip.start_frame} – {currentClip.end_frame}
+              </p>
+              <p className="text-white/20 text-[10px] mt-2 max-w-xs mx-auto">
+                Video playback will be available in a future update. Use the frame range and metadata to identify the behavior.
               </p>
             </div>
           </div>
