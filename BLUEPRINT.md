@@ -48,11 +48,15 @@ The `/api/review/attention/count` endpoint now includes pending behavior reviews
 | `frontend/src/App.tsx` | React router setup, route definitions |
 | `frontend/src/api/client.ts` | API fetch wrappers (`get`, `post`, `put`, `del`, `apiFetch`) |
 | `frontend/src/api/review.ts` | Review API functions |
-| `frontend/src/api/settings.ts` | Settings API functions (`resetDatabase`, `seedDatabase`) |
+| `frontend/src/api/settings.ts` | Settings API functions (`getZones`, `getSystemInfo`, `resetDatabase`, `seedDatabase`) |
+| `frontend/src/utils/formatTime.ts` | Time helpers (`formatRelativeTime`, `formatDateTime`, `formatDuration`) |
 | `frontend/src/components/layout/Layout.tsx` | Shell layout with sidebar, top bar, skip link, keyboard shortcuts |
 | `frontend/src/components/layout/TopBar.tsx` | Top bar with title, notification bell, help button |
 | `frontend/src/components/layout/Sidebar.tsx` | Navigation sidebar with attention dot |
-| `frontend/src/components/ui/` | Shared UI components (modals, cards, badges, toasts, etc.) |
+| `frontend/src/components/ui/ConfirmDialog.tsx` | Reusable confirmation modal with danger/warning/default variants |
+| `frontend/src/components/ui/HeatmapCanvas.tsx` | Canvas-based heatmap renderer for zone and droppings views |
+| `frontend/src/components/ui/SectionError.tsx` | Inline error display with retry button for per-section failures |
+| `frontend/src/components/ui/KeyboardShortcutsModal.tsx` | Keyboard shortcuts help modal |
 | `frontend/src/pages/Home.tsx` | Dashboard with per-section error handling |
 | `frontend/src/pages/Videos.tsx` | Video list with filters and pagination |
 | `frontend/src/pages/VideoDetail.tsx` | Frame viewer, pigeon cards, QC flags, deep linking |
