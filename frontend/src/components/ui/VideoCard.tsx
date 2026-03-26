@@ -71,7 +71,7 @@ export default function VideoCard({ video }: VideoCardProps) {
         </button>
         {video.processing_status === "completed" && video.review_status === "raw" && (
           <button
-            onClick={() => navigate(`/review?video=${video.video_id}`)}
+            onClick={() => navigate(`/review?type=identity&video_id=${video.video_id}`)}
             className="px-3 py-1.5 border border-border text-[12px] font-medium text-text-secondary rounded-lg hover:bg-bg transition-colors"
           >
             Review
