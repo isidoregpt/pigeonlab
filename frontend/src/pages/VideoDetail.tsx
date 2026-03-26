@@ -264,6 +264,11 @@ export default function VideoDetail() {
                 <p className="text-[11px] text-text-secondary/60">
                   ← → to navigate frames, Shift+← → to jump 10 frames
                 </p>
+                <p className="text-sm font-medium text-text-primary tabular-nums mt-1">
+                  {video.fps != null && video.fps > 0
+                    ? formatTimestamp(frameNum / video.fps)
+                    : "FPS unknown"}
+                </p>
               </div>
             )}
           </div>
