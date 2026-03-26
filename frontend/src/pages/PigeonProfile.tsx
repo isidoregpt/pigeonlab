@@ -383,8 +383,14 @@ export default function PigeonProfile() {
             Zone Breakdown
           </h2>
           <p className="text-sm text-text-secondary">
-            No zone data available yet.
+            No zone data available yet. Zone data appears after behaviors are confirmed in the Review section.
           </p>
+          <Link
+            to="/review?type=behavior"
+            className="inline-block mt-2 text-sm font-medium text-accent hover:text-accent/80 transition-colors"
+          >
+            Review Behaviors →
+          </Link>
         </div>
       ) : null}
 
