@@ -2,7 +2,7 @@ import os
 
 from fastapi import APIRouter
 
-from database import get_db, DB_PATH
+from database import get_db, init_db, DB_PATH
 
 router = APIRouter()
 
@@ -42,3 +42,19 @@ async def system_info():
         "database_size_mb": db_size_mb,
         **counts,
     }
+
+
+@router.delete("/reset")
+async def reset_database():
+    """Drop all tables and recreate the schema. Development use only."""
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+        ).fetchall()
+        for row in rows:
+            conn.execute(f"DROP TABLE IF EXISTS [{row['name']}]")
+        conn.commit()
+
+    init_db()
+
+    return {"status": "ok", "message": "Database has been reset."}

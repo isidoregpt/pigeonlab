@@ -1,10 +1,16 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { usePageTitle } from "../hooks/usePageTitle";
-import { getZones, getSystemInfo } from "../api/settings";
+import { getZones, getSystemInfo, resetDatabase } from "../api/settings";
+import ConfirmDialog from "../components/ui/ConfirmDialog";
+import { useToast } from "../components/ui/Toast";
 
 export default function LabSetup() {
   usePageTitle("Settings");
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   const zonesQuery = useQuery({
     queryKey: ["settings-zones"],
@@ -14,6 +20,18 @@ export default function LabSetup() {
   const infoQuery = useQuery({
     queryKey: ["settings-info"],
     queryFn: getSystemInfo,
+  });
+
+  const resetMutation = useMutation({
+    mutationFn: resetDatabase,
+    onSuccess: () => {
+      toast.success("Database has been reset.");
+      setShowResetConfirm(false);
+      queryClient.invalidateQueries();
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : "Database reset failed.");
+    },
   });
 
   const zones = zonesQuery.data?.zones ?? [];
@@ -135,6 +153,36 @@ export default function LabSetup() {
           </p>
         )}
       </section>
+
+      {/* Danger Zone */}
+      <section className="border-2 border-error/30 rounded-xl p-5 space-y-3">
+        <h2 className="text-sm font-semibold text-error">Danger Zone</h2>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium text-text-primary">Reset Database</p>
+            <p className="text-[12px] text-text-secondary">
+              Delete all data and start fresh. This cannot be undone.
+            </p>
+          </div>
+          <button
+            onClick={() => setShowResetConfirm(true)}
+            className="px-4 py-2 text-sm font-medium text-error border border-error/30 rounded-lg hover:bg-error/5 transition-colors whitespace-nowrap"
+          >
+            Reset Database
+          </button>
+        </div>
+      </section>
+
+      <ConfirmDialog
+        open={showResetConfirm}
+        title="Reset Database"
+        message="This will delete all data including videos, pigeons, and training models. This cannot be undone. Are you sure?"
+        confirmLabel="Reset Everything"
+        variant="danger"
+        onConfirm={() => resetMutation.mutate()}
+        onCancel={() => setShowResetConfirm(false)}
+        loading={resetMutation.isPending}
+      />
     </div>
   );
 }
