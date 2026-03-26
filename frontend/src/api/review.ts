@@ -107,8 +107,10 @@ export function splitTrack(payload: TrackSplitPayload) {
 
 // --- Behavior Review ---
 
-export function getBehaviorsForReview(status = "raw", limit = 50) {
-  return get<Behavior[]>(`/review/behaviors?status=${status}&limit=${limit}`);
+export function getBehaviorsForReview(status = "raw", limit = 50, videoId?: number) {
+  const params = new URLSearchParams({ status, limit: String(limit) });
+  if (videoId !== undefined) params.set("video_id", String(videoId));
+  return get<Behavior[]>(`/review/behaviors?${params}`);
 }
 
 export function reviewBehavior(payload: { behavior_id: number; action: "confirm" | "reject"; reviewer?: string }) {

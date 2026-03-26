@@ -482,6 +482,7 @@ async def review_behavior(body: BehaviorReviewRequest):
 async def list_behaviors(
     status: str = Query("raw"),
     video_id: int | None = Query(None),
+    limit: int = Query(50, ge=1, le=200),
 ):
     with get_db() as conn:
         query = "SELECT * FROM behaviors WHERE review_status = ?"
@@ -491,7 +492,8 @@ async def list_behaviors(
             query += " AND video_id = ?"
             params.append(video_id)
 
-        query += " ORDER BY confidence ASC"
+        query += " ORDER BY confidence ASC LIMIT ?"
+        params.append(limit)
 
         rows = conn.execute(query, params).fetchall()
     return [dict(r) for r in rows]
