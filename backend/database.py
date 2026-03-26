@@ -253,6 +253,7 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_videos_session ON videos(session_id);
         CREATE INDEX IF NOT EXISTS idx_videos_review_status ON videos(review_status);
         CREATE INDEX IF NOT EXISTS idx_videos_processing_status ON videos(processing_status);
+        CREATE INDEX IF NOT EXISTS idx_videos_processed_at ON videos(processed_at);
 
         -- Indexes: video_assignments
         CREATE INDEX IF NOT EXISTS idx_va_video ON video_assignments(video_id);
@@ -261,6 +262,7 @@ def init_db():
 
         -- Indexes: identity_reviews
         CREATE INDEX IF NOT EXISTS idx_ir_assignment ON identity_reviews(assignment_id);
+        CREATE INDEX IF NOT EXISTS idx_ir_reviewed_at ON identity_reviews(reviewed_at);
 
         -- Indexes: track_edits
         CREATE INDEX IF NOT EXISTS idx_te_video_frame ON track_edits(video_id, frame_idx);
