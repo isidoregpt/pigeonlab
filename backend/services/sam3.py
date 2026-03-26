@@ -21,11 +21,12 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-# Default checkpoint path relative to the backend directory
+# Default checkpoint path relative to the project root
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_CHECKPOINT = str(
-    Path(__file__).resolve().parent.parent / "checkpoints" / "sam2_hiera_large.pt"
+    _PROJECT_ROOT / "data" / "models" / "sam3" / "sam2.1_hiera_large.pt"
 )
-DEFAULT_MODEL_CFG = "sam2_hiera_l.yaml"
+DEFAULT_MODEL_CFG = "sam2.1_hiera_l.yaml"
 
 
 class SAM3Wrapper:
