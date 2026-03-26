@@ -181,6 +181,11 @@ function ClipCard({
               : "—"}{" "}
             {clip.zone && `· ${clip.zone}`}
           </p>
+          {clip.start_frame != null && clip.end_frame != null && (
+            <p className="text-[11px] text-text-secondary mt-0.5">
+              Frames {clip.start_frame}–{clip.end_frame}
+            </p>
+          )}
         </div>
         <span
           className={`px-2 py-0.5 text-[11px] font-medium rounded-full ${
@@ -194,9 +199,9 @@ function ClipCard({
       </div>
 
       {clip.extraction_reason && (
-        <p className="text-[11px] text-text-secondary truncate">
+        <span className="inline-block px-2 py-0.5 text-[10px] font-medium text-text-secondary bg-bg border border-border rounded-full truncate max-w-full">
           {clip.extraction_reason}
-        </p>
+        </span>
       )}
 
       <button
