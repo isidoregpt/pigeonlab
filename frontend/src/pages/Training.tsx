@@ -27,6 +27,7 @@ import type { ModelRegistryEntry } from "../types";
 import LoadingState from "../components/ui/LoadingState";
 import EmptyState from "../components/ui/EmptyState";
 import SectionError from "../components/ui/SectionError";
+import { useToast } from "../components/ui/Toast";
 import { usePageTitle } from "../hooks/usePageTitle";
 
 /* ================================================================ */
@@ -447,6 +448,7 @@ function LabelClipsTab({
    ================================================================ */
 function TrainModelTab() {
   const queryClient = useQueryClient();
+  const toast = useToast();
   const [backbone, setBackbone] = useState("r3d_18");
   const [epochs, setEpochs] = useState(50);
   const [batchSize, setBatchSize] = useState(16);
@@ -467,6 +469,10 @@ function TrainModelTab() {
     onSuccess: (data) => {
       setJobId(data.job_id);
       queryClient.invalidateQueries({ queryKey: ["models"] });
+      toast.success(`Training started! Job ID: ${data.job_id}`);
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : "Training failed. Please try again.");
     },
   });
 
