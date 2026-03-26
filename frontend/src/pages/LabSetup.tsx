@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { usePageTitle } from "../hooks/usePageTitle";
-import { getZones, getSystemInfo, resetDatabase } from "../api/settings";
+import { getZones, getSystemInfo, resetDatabase, seedDatabase } from "../api/settings";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
 import { useToast } from "../components/ui/Toast";
 
@@ -11,6 +11,7 @@ export default function LabSetup() {
   const queryClient = useQueryClient();
   const toast = useToast();
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [showSeedConfirm, setShowSeedConfirm] = useState(false);
 
   const zonesQuery = useQuery({
     queryKey: ["settings-zones"],
@@ -31,6 +32,18 @@ export default function LabSetup() {
     },
     onError: (err) => {
       toast.error(err instanceof Error ? err.message : "Database reset failed.");
+    },
+  });
+
+  const seedMutation = useMutation({
+    mutationFn: seedDatabase,
+    onSuccess: () => {
+      toast.success("Sample data loaded successfully.");
+      setShowSeedConfirm(false);
+      queryClient.invalidateQueries();
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : "Failed to load sample data.");
     },
   });
 
@@ -171,6 +184,21 @@ export default function LabSetup() {
             Reset Database
           </button>
         </div>
+        <div className="border-t border-error/15" />
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium text-text-primary">Load Sample Data</p>
+            <p className="text-[12px] text-text-secondary">
+              Add demo pigeons, videos, and other sample data for testing.
+            </p>
+          </div>
+          <button
+            onClick={() => setShowSeedConfirm(true)}
+            className="px-4 py-2 text-sm font-medium text-warning border border-warning/30 rounded-lg hover:bg-warning/5 transition-colors whitespace-nowrap"
+          >
+            Load Sample Data
+          </button>
+        </div>
       </section>
 
       <ConfirmDialog
@@ -182,6 +210,17 @@ export default function LabSetup() {
         onConfirm={() => resetMutation.mutate()}
         onCancel={() => setShowResetConfirm(false)}
         loading={resetMutation.isPending}
+      />
+
+      <ConfirmDialog
+        open={showSeedConfirm}
+        title="Load Sample Data"
+        message="This will add sample pigeons, videos, and other demo data. Existing data will not be removed."
+        confirmLabel="Load Data"
+        variant="warning"
+        onConfirm={() => seedMutation.mutate()}
+        onCancel={() => setShowSeedConfirm(false)}
+        loading={seedMutation.isPending}
       />
     </div>
   );

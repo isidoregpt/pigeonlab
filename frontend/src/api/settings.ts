@@ -1,4 +1,4 @@
-import { get, del } from "./client";
+import { get, post, del } from "./client";
 
 export function getZones() {
   return get<{ zones: string[] }>("/settings/zones");
@@ -21,4 +21,8 @@ export function getSystemInfo() {
 
 export function resetDatabase() {
   return del<{ status: string; message: string }>("/settings/reset");
+}
+
+export function seedDatabase() {
+  return post<{ status: string; message: string }>("/settings/seed", {});
 }

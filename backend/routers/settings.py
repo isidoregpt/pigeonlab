@@ -3,6 +3,7 @@ import os
 from fastapi import APIRouter
 
 from database import get_db, init_db, DB_PATH
+import seed_data
 
 router = APIRouter()
 
@@ -58,3 +59,10 @@ async def reset_database():
     init_db()
 
     return {"status": "ok", "message": "Database has been reset."}
+
+
+@router.post("/seed")
+async def seed_database():
+    """Load sample data into the database. Existing data is not removed."""
+    seed_data.seed()
+    return {"status": "ok", "message": "Sample data loaded."}
