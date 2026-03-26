@@ -65,19 +65,22 @@ export default function Home() {
             {
               step: 1,
               title: "Register your pigeons",
+              description: "Register your pigeons so PigeonLab can identify them",
               to: "/pigeons",
             },
             {
               step: 2,
               title: "Add videos for processing",
+              description: "Add videos for processing — PigeonLab will find and track your pigeons",
               to: "/videos",
             },
             {
               step: 3,
               title: "Review and analyze results",
+              description: "Review results, view insights, and export data",
               to: "/insights",
             },
-          ].map(({ step, title, to }) => (
+          ].map(({ step, title, description, to }) => (
             <Link
               key={step}
               to={to}
@@ -88,6 +91,9 @@ export default function Home() {
               </span>
               <p className="text-sm font-medium text-text-primary group-hover:text-accent transition-colors">
                 {title}
+              </p>
+              <p className="text-xs text-text-secondary leading-relaxed">
+                {description}
               </p>
             </Link>
           ))}
