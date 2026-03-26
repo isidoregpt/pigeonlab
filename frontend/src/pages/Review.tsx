@@ -186,6 +186,19 @@ function IdentityReview({ videoId }: { videoId: number }) {
             className="max-w-full max-h-full object-contain"
           />
         </div>
+        {(current.confidence !== null || current.match_method) && (
+          <div className="px-4 py-2.5 bg-surface border-t border-border text-xs text-text-secondary">
+            System guess: <span className="font-medium text-text-primary">{current.pigeon_id}</span>
+            {current.confidence !== null && (
+              <span className="ml-1">
+                ({(current.confidence * 100).toFixed(0)}% confidence{current.match_method ? `, ${current.match_method.replace(/_/g, " ")}` : ""})
+              </span>
+            )}
+            {current.confidence === null && current.match_method && (
+              <span className="ml-1">({current.match_method.replace(/_/g, " ")})</span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Counter */}
