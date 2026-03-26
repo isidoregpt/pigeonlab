@@ -1,6 +1,6 @@
 import os
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from database import get_db, init_db, DB_PATH
 import seed_data
@@ -47,22 +47,25 @@ async def system_info():
 
 @router.delete("/reset")
 async def reset_database():
-    """Drop all tables and recreate the schema. Development use only."""
-    with get_db() as conn:
-        rows = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
-        ).fetchall()
-        for row in rows:
-            conn.execute(f"DROP TABLE IF EXISTS [{row['name']}]")
-        conn.commit()
+    """Drop the database file and recreate tables. Development use only."""
+    if DB_PATH.exists():
+        os.remove(DB_PATH)
 
     init_db()
 
-    return {"status": "ok", "message": "Database has been reset."}
+    return {"status": "reset"}
 
 
 @router.post("/seed")
 async def seed_database():
-    """Load sample data into the database. Existing data is not removed."""
+    """Load sample data into the database. Fails if data already exists."""
+    with get_db() as conn:
+        row = conn.execute("SELECT COUNT(*) AS cnt FROM pigeons").fetchone()
+        if row and row["cnt"] > 0:
+            raise HTTPException(
+                status_code=409,
+                detail="Data already exists. Use --force or reset first.",
+            )
+
     seed_data.seed()
-    return {"status": "ok", "message": "Sample data loaded."}
+    return {"status": "seeded"}
