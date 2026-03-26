@@ -253,6 +253,12 @@ export default function PigeonProfile() {
                     {pigeon.total_frames_observed > 0 && (
                       <span>Observed in {pigeon.total_frames_observed.toLocaleString()} frames</span>
                     )}
+                    {pigeon.avg_velocity_mm_s != null && (
+                      <span>Average speed: {pigeon.avg_velocity_mm_s.toFixed(1)} mm/s</span>
+                    )}
+                    {pigeon.session_count != null && pigeon.session_count > 0 && (
+                      <span>Observed in {pigeon.session_count} session{pigeon.session_count !== 1 ? "s" : ""}</span>
+                    )}
                   </div>
                 </div>
               </div>
