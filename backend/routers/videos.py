@@ -1,3 +1,5 @@
+import asyncio
+import logging
 import uuid
 from enum import Enum
 from pathlib import Path
@@ -6,12 +8,15 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from database import get_db
+from database import get_db, get_db_path
+from services.video_processor import VideoProcessor
 from utils import get_default_reviewer
 
 router = APIRouter()
 
 DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
+
+_processing_jobs: dict[str, asyncio.Task] = {}
 
 
 # --- Schemas ---
@@ -112,6 +117,27 @@ async def get_video(video_id: int):
     return video
 
 
+async def _run_processing_job(
+    job_id: str,
+    video_entries: list[dict],
+) -> None:
+    """Background task that processes queued videos sequentially."""
+    processor = VideoProcessor()
+    for entry in video_entries:
+        try:
+            await processor.process_video(
+                video_id=entry["video_id"],
+                video_path=entry["video_path"],
+                text_prompt=entry.get("text_prompt", "pigeon"),
+                expected_pigeon_count=entry.get("expected_pigeon_count", 4),
+            )
+        except Exception:
+            logging.exception(
+                "Processing failed for video_id=%s", entry["video_id"],
+            )
+    _processing_jobs.pop(job_id, None)
+
+
 @router.post("/process")
 async def process_videos(req: ProcessRequest):
     if not req.video_paths:
@@ -120,23 +146,48 @@ async def process_videos(req: ProcessRequest):
     with get_db() as conn:
         job_id = str(uuid.uuid4())
         queued = 0
+        new_video_ids: list[int] = []
 
         for path in req.video_paths:
             name = Path(path).name
             camera = req.camera_assignments.get(path, "")
-            # NOTE: processed_at is left NULL here. The future processing
-            # worker should set processed_at = datetime('now') when it
-            # transitions processing_status to 'completed'.
-            conn.execute(
+            cursor = conn.execute(
                 """INSERT INTO videos (video_name, session_id, camera_type, processing_status)
                    VALUES (?, ?, ?, 'queued')""",
                 (name, req.session_id, camera),
             )
+            new_video_ids.append(cursor.lastrowid)
             queued += 1
 
         conn.commit()
 
+    video_entries = [
+        {
+            "video_id": vid_id,
+            "video_path": path,
+            "text_prompt": req.text_prompt,
+            "expected_pigeon_count": req.expected_pigeon_count,
+        }
+        for vid_id, path in zip(new_video_ids, req.video_paths)
+    ]
+
+    task = asyncio.create_task(_run_processing_job(job_id, video_entries))
+    _processing_jobs[job_id] = task
+
     return {"job_id": job_id, "videos_queued": queued, "status": "queued"}
+
+
+@router.get("/jobs/{job_id}")
+async def get_job_status(job_id: str):
+    task = _processing_jobs.get(job_id)
+    if task is None:
+        return {"job_id": job_id, "status": "not_found"}
+    if task.done():
+        exc = task.exception()
+        if exc:
+            return {"job_id": job_id, "status": "failed", "error": str(exc)}
+        return {"job_id": job_id, "status": "completed"}
+    return {"job_id": job_id, "status": "running"}
 
 
 @router.get("/{video_id}/status")
