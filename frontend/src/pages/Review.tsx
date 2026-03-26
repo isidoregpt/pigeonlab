@@ -92,18 +92,29 @@ function IdentityReview({ videoId }: { videoId: number }) {
     mutationFn: ({
       assignmentId,
       pigeonId,
+      originalPigeonId,
     }: {
       assignmentId: number;
       pigeonId: string;
-    }) =>
-      reviewIdentity({
+      originalPigeonId: string;
+    }) => {
+      const isReassign = pigeonId !== originalPigeonId;
+      return reviewIdentity({
         assignment_id: assignmentId,
-        action: "confirm",
+        action: isReassign ? "reassign" : "confirm",
         pigeon_id: pigeonId,
-        reviewer: "lab_user",
-      }),
+        ...(isReassign
+          ? { old_pigeon_id: originalPigeonId, new_pigeon_id: pigeonId }
+          : {}),
+      });
+    },
     onSuccess: (_data, variables) => {
-      toast.success(`Identity confirmed as ${variables.pigeonId}`);
+      const isReassign = variables.pigeonId !== variables.originalPigeonId;
+      toast.success(
+        isReassign
+          ? `Reassigned from ${variables.originalPigeonId} to ${variables.pigeonId}`
+          : `Identity confirmed as ${variables.pigeonId}`,
+      );
       queryClient.invalidateQueries({ queryKey: ["unconfirmed-identities", videoId] });
       queryClient.invalidateQueries({ queryKey: ["attention-count"] });
       queryClient.invalidateQueries({ queryKey: ["attention-items"] });
@@ -228,6 +239,7 @@ function IdentityReview({ videoId }: { videoId: number }) {
                 confirmMutation.mutate({
                   assignmentId: current.id,
                   pigeonId: p.pigeon_id,
+                  originalPigeonId: current.pigeon_id,
                 })
               }
               disabled={confirmMutation.isPending}
