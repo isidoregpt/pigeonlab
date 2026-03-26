@@ -24,6 +24,47 @@ The `/api/review/attention/count` endpoint now includes pending behavior reviews
 
 ---
 
+## Section 3 — File Map
+
+### Backend
+
+| File | Purpose |
+|------|---------|
+| `backend/main.py` | FastAPI app entry point, mounts all routers under `/api` |
+| `backend/database.py` | SQLite schema, `init_db()`, `get_db()` context manager, `get_connection()` |
+| `backend/utils.py` | Shared utilities (`get_default_reviewer()`) |
+| `backend/seed_data.py` | Sample data generator for development |
+| `backend/routers/videos.py` | Video CRUD, processing, frames, features, track edits |
+| `backend/routers/review.py` | Identity review, QC flags, behaviors, droppings, track corrections |
+| `backend/routers/pigeons.py` | Pigeon registry and profile endpoints |
+| `backend/routers/insights.py` | Stats, charts, heatmaps, social map, exports |
+| `backend/routers/training.py` | Clip library, behavior labeling, model training |
+| `backend/routers/settings.py` | System info, zone list, database reset/seed |
+
+### Frontend
+
+| File | Purpose |
+|------|---------|
+| `frontend/src/App.tsx` | React router setup, route definitions |
+| `frontend/src/api/client.ts` | API fetch wrappers (`get`, `post`, `put`, `del`, `apiFetch`) |
+| `frontend/src/api/review.ts` | Review API functions |
+| `frontend/src/api/settings.ts` | Settings API functions (`resetDatabase`, `seedDatabase`) |
+| `frontend/src/components/layout/Layout.tsx` | Shell layout with sidebar, top bar, skip link, keyboard shortcuts |
+| `frontend/src/components/layout/TopBar.tsx` | Top bar with title, notification bell, help button |
+| `frontend/src/components/layout/Sidebar.tsx` | Navigation sidebar with attention dot |
+| `frontend/src/components/ui/` | Shared UI components (modals, cards, badges, toasts, etc.) |
+| `frontend/src/pages/Home.tsx` | Dashboard with per-section error handling |
+| `frontend/src/pages/Videos.tsx` | Video list with filters and pagination |
+| `frontend/src/pages/VideoDetail.tsx` | Frame viewer, pigeon cards, QC flags, deep linking |
+| `frontend/src/pages/Pigeons.tsx` | Pigeon registry list |
+| `frontend/src/pages/PigeonProfile.tsx` | Individual pigeon stats and behavior chart |
+| `frontend/src/pages/Review.tsx` | Review queue (identity, QC, behavior, droppings) with batch ops |
+| `frontend/src/pages/Insights.tsx` | Charts, heatmaps, social map, exports |
+| `frontend/src/pages/Training.tsx` | Clip labeling and model training |
+| `frontend/src/pages/LabSetup.tsx` | Settings page with danger zone |
+
+---
+
 ## Section 5 — API Endpoint Reference
 
 ### Videos Router (`/api/videos`)
@@ -96,6 +137,43 @@ The `/api/review/attention/count` endpoint now includes pending behavior reviews
 | POST | `/label` | Body: `clip_id`, `behavior_class`, `labeler`, `split`, `notes` | Created label | Label a training clip |
 | GET | `/models` | — | Model list | All models in the registry |
 | POST | `/train` | Body: `backbone`, `epochs`, `learning_rate`, `notes` | `{model_id, status}` | Start model training |
+
+---
+
+## Section 11 — Dependency Map
+
+### Backend Router Dependencies
+
+Each router depends on `database.py` for DB access via `get_db()` / `get_connection()`.
+
+```
+main.py
+├── routers/videos.py    → database (get_db), utils (get_default_reviewer)
+├── routers/review.py    → database (get_db), utils (get_default_reviewer)
+├── routers/pigeons.py   → database (get_db)
+├── routers/insights.py  → database (get_db, aiosqlite)
+├── routers/training.py  → database (get_db, aiosqlite), utils (get_default_reviewer)
+└── routers/settings.py  → database (get_db, init_db, DB_PATH), seed_data
+```
+
+### Frontend Page Dependencies
+
+```
+App.tsx (router)
+└── Layout.tsx
+    ├── Sidebar.tsx         → api/client (apiFetch)
+    ├── TopBar.tsx          → api/client (apiFetch)
+    └── Pages:
+        ├── Home.tsx        → api/client
+        ├── Videos.tsx      → api/client
+        ├── VideoDetail.tsx → api/client, api/review
+        ├── Pigeons.tsx     → api/client
+        ├── PigeonProfile.tsx → api/client
+        ├── Review.tsx      → api/review, api/client
+        ├── Insights.tsx    → api/client
+        ├── Training.tsx    → api/client
+        └── LabSetup.tsx    → api/settings, api/client
+```
 
 ---
 
