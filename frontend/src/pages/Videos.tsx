@@ -75,8 +75,14 @@ export default function Videos() {
 
   if (isError) {
     return (
-      <div className="text-center py-16 text-text-secondary text-sm">
-        Something went wrong loading videos. Please try refreshing the page.
+      <div className="text-center py-16 space-y-3">
+        <p className="text-sm text-text-secondary">Something went wrong loading videos.</p>
+        <button
+          onClick={() => refetch()}
+          className="text-sm font-medium text-accent hover:text-accent/80 transition-colors"
+        >
+          Try Again
+        </button>
       </div>
     );
   }

@@ -161,9 +161,15 @@ export default function LabSetup() {
             </div>
           </>
         ) : (
-          <p className="text-sm text-text-secondary">
-            Could not load system information.
-          </p>
+          <div className="text-center py-4 space-y-2">
+            <p className="text-sm text-text-secondary">Could not load system information.</p>
+            <button
+              onClick={() => infoQuery.refetch()}
+              className="text-sm font-medium text-accent hover:text-accent/80 transition-colors"
+            >
+              Try Again
+            </button>
+          </div>
         )}
       </section>
 
