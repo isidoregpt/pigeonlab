@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Plus, Search, Loader2 } from "lucide-react";
 import { usePageTitle } from "../hooks/usePageTitle";
+import { useDebounce } from "../hooks/useDebounce";
 import { getVideos } from "../api/videos";
 import type { Video } from "../types";
 import VideoCard from "../components/ui/VideoCard";
@@ -59,15 +60,17 @@ export default function Videos() {
   const total = data?.total ?? 0;
   const totalPages = Math.ceil(total / PER_PAGE);
 
+  const debouncedSearch = useDebounce(search, 200);
+
   const filtered = useMemo(() => {
-    if (!search.trim()) return videos;
-    const q = search.toLowerCase();
+    if (!debouncedSearch.trim()) return videos;
+    const q = debouncedSearch.toLowerCase();
     return videos.filter(
       (v) =>
         v.video_name.toLowerCase().includes(q) ||
         (v.session_id?.toLowerCase().includes(q) ?? false),
     );
-  }, [videos, search]);
+  }, [videos, debouncedSearch]);
 
   const groups = useMemo(() => groupByDate(filtered), [filtered]);
 
