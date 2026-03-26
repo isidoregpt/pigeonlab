@@ -469,6 +469,18 @@ export default function PigeonProfile() {
         </div>
       ) : null}
 
+      {/* ===== Behavior Timeline (stub) ===== */}
+      <section className="bg-surface border border-border rounded-xl p-5">
+        <h2 className="text-sm font-semibold text-text-primary mb-2">
+          Behavior Timeline
+        </h2>
+        <div className="rounded-lg border border-dashed border-border bg-bg/50 p-6 text-center">
+          <p className="text-sm text-text-secondary">
+            A Gantt-style timeline showing when behaviors occur across sessions will be available in a future update.
+          </p>
+        </div>
+      </section>
+
       {/* ===== Identity Confidence ===== */}
       {identityQuery.isLoading ? (
         <SectionSkeleton rows={2} />
