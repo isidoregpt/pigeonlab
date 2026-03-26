@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Bell } from "lucide-react";
+import { Bell, HelpCircle } from "lucide-react";
 import { apiFetch } from "../../api/client";
 
 interface TopBarProps {
   title: string;
+  onShowShortcuts?: () => void;
 }
 
-export default function TopBar({ title }: TopBarProps) {
+export default function TopBar({ title, onShowShortcuts }: TopBarProps) {
   const navigate = useNavigate();
   const [attentionCount, setAttentionCount] = useState(0);
 
@@ -31,6 +32,14 @@ export default function TopBar({ title }: TopBarProps) {
         {title}
       </h2>
 
+      <div className="flex items-center gap-1">
+      <button
+        onClick={onShowShortcuts}
+        className="flex items-center justify-center w-8 h-8 rounded-lg text-text-secondary hover:text-text-primary hover:bg-bg transition-colors"
+        title="Keyboard shortcuts (?)"
+      >
+        <HelpCircle size={18} strokeWidth={1.8} />
+      </button>
       <button
         onClick={() => navigate("/review")}
         className="relative flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors hover:bg-bg"
@@ -42,6 +51,7 @@ export default function TopBar({ title }: TopBarProps) {
           </span>
         )}
       </button>
+      </div>
     </header>
   );
 }

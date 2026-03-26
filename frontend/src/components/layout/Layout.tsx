@@ -1,6 +1,8 @@
+import { useCallback, useEffect, useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import TopBar from "./TopBar";
+import KeyboardShortcutsModal from "../ui/KeyboardShortcutsModal";
 
 const pageTitles: Record<string, string> = {
   "/": "Home",
@@ -22,18 +24,36 @@ function getPageTitle(pathname: string): string {
 export default function Layout() {
   const location = useLocation();
   const title = getPageTitle(location.pathname);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+
+  const openShortcuts = useCallback(() => setShortcutsOpen(true), []);
+  const closeShortcuts = useCallback(() => setShortcutsOpen(false), []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (e.key === "?" && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        setShortcutsOpen((prev) => !prev);
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0">
-        <TopBar title={title} />
+        <TopBar title={title} onShowShortcuts={openShortcuts} />
         <main className="flex-1 overflow-auto bg-bg p-6">
           <div key={location.pathname} className="page-enter">
             <Outlet />
           </div>
         </main>
       </div>
+      <KeyboardShortcutsModal open={shortcutsOpen} onClose={closeShortcuts} />
     </div>
   );
 }
