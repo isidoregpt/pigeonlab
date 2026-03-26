@@ -6,6 +6,7 @@ import {
   getNextVideoForIdentityReview,
   getUnconfirmedIdentities,
   reviewIdentity,
+  batchConfirmIdentities,
   getQCFlags,
   reviewQCFlag,
   batchResolveQCFlags,
@@ -695,10 +696,154 @@ function BehaviorReview() {
 }
 
 /* ================================================================
+   5a. Batch Confirm Modal
+   ================================================================ */
+function BatchConfirmModal({
+  onClose,
+}: {
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const toast = useToast();
+
+  const nextVideoQuery = useQuery({
+    queryKey: ["next-identity-video"],
+    queryFn: getNextVideoForIdentityReview,
+  });
+
+  const videoId = nextVideoQuery.data?.video_id ?? null;
+
+  const assignmentsQuery = useQuery({
+    queryKey: ["unconfirmed-identities-batch", videoId],
+    queryFn: () => getUnconfirmedIdentities(videoId!),
+    enabled: videoId !== null,
+  });
+
+  const assignments = assignmentsQuery.data ?? [];
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [submitting, setSubmitting] = useState(false);
+
+  const toggle = (id: number) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const selectAbove85 = () => {
+    const ids = assignments
+      .filter((a) => (a.confidence ?? 0) >= 0.85)
+      .map((a) => a.id);
+    setSelected(new Set(ids));
+  };
+
+  const allAbove85Selected =
+    assignments.filter((a) => (a.confidence ?? 0) >= 0.85).length > 0 &&
+    assignments
+      .filter((a) => (a.confidence ?? 0) >= 0.85)
+      .every((a) => selected.has(a.id));
+
+  const handleConfirm = async () => {
+    const items = assignments
+      .filter((a) => selected.has(a.id))
+      .map((a) => ({ assignment_id: a.id, pigeon_id: a.pigeon_id }));
+    if (items.length === 0) return;
+
+    setSubmitting(true);
+    try {
+      const result = await batchConfirmIdentities(items);
+      toast.success(`Confirmed ${result.confirmed} identit${result.confirmed === 1 ? "y" : "ies"}.`);
+      queryClient.invalidateQueries({ queryKey: ["attention-count"] });
+      queryClient.invalidateQueries({ queryKey: ["next-identity-video"] });
+      queryClient.invalidateQueries({ queryKey: ["unconfirmed-identities-batch"] });
+      onClose();
+    } catch {
+      toast.error("Batch confirmation failed. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const loading = nextVideoQuery.isLoading || assignmentsQuery.isLoading;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+      <div
+        className="bg-surface border border-border rounded-xl shadow-lg w-full max-w-lg max-h-[80vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+          <h2 className="text-sm font-bold text-text-primary">Batch Confirm Identities</h2>
+          <button onClick={onClose} className="text-text-secondary hover:text-text-primary text-lg leading-none">&times;</button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 py-3 space-y-1">
+          {loading ? (
+            <LoadingState variant="list" />
+          ) : assignments.length === 0 ? (
+            <p className="text-sm text-text-secondary py-4 text-center">No unconfirmed identities found.</p>
+          ) : (
+            <>
+              <label className="flex items-center gap-2 py-2 text-xs text-text-secondary cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={allAbove85Selected}
+                  onChange={() => (allAbove85Selected ? setSelected(new Set()) : selectAbove85())}
+                  className="accent-accent"
+                />
+                Select all above 85% confidence
+              </label>
+              <div className="border-t border-border" />
+              {assignments.map((a) => (
+                <label
+                  key={a.id}
+                  className="flex items-center gap-3 py-2 cursor-pointer hover:bg-accent/[0.03] rounded-lg px-1"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selected.has(a.id)}
+                    onChange={() => toggle(a.id)}
+                    className="accent-accent"
+                  />
+                  <span className="text-sm text-text-primary font-medium truncate">
+                    {a.pigeon_id}
+                  </span>
+                  <span className="ml-auto text-xs text-text-secondary tabular-nums">
+                    {a.confidence !== null ? `${(a.confidence * 100).toFixed(0)}%` : "—"}
+                  </span>
+                </label>
+              ))}
+            </>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-border">
+          <button
+            onClick={onClose}
+            className="px-3 py-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleConfirm}
+            disabled={selected.size === 0 || submitting}
+            className="px-4 py-1.5 text-sm font-medium text-white bg-accent rounded-lg hover:bg-accent/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            {submitting ? "Confirming…" : `Confirm Selected (${selected.size})`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ================================================================
    5. General Review Queue
    ================================================================ */
 function ReviewQueue() {
   const navigate = useNavigate();
+  const [showBatchModal, setShowBatchModal] = useState(false);
 
   const countQuery = useQuery({
     queryKey: ["attention-count"],
@@ -798,17 +943,31 @@ function ReviewQueue() {
               </div>
             </div>
             {s.count > 0 && (
-              <button
-                onClick={s.action}
-                className="flex items-center gap-1 text-sm font-medium text-accent hover:text-accent/80 transition-colors whitespace-nowrap shrink-0"
-              >
-                Start Reviewing
-                <ChevronRight size={14} />
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                {s.key === "identity" && (
+                  <button
+                    onClick={() => setShowBatchModal(true)}
+                    className="px-3 py-1.5 text-xs font-medium text-accent border border-accent/30 rounded-lg hover:bg-accent/5 transition-colors whitespace-nowrap"
+                  >
+                    Batch Confirm
+                  </button>
+                )}
+                <button
+                  onClick={s.action}
+                  className="flex items-center gap-1 text-sm font-medium text-accent hover:text-accent/80 transition-colors whitespace-nowrap"
+                >
+                  Start Reviewing
+                  <ChevronRight size={14} />
+                </button>
+              </div>
             )}
           </div>
         ))}
       </div>
+
+      {showBatchModal && (
+        <BatchConfirmModal onClose={() => setShowBatchModal(false)} />
+      )}
     </div>
   );
 }

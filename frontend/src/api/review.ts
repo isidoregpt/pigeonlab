@@ -24,6 +24,16 @@ export function reviewIdentity(payload: IdentityReviewPayload) {
   return post<VideoAssignment>("/review/identity", payload);
 }
 
+export function batchConfirmIdentities(
+  assignments: { assignment_id: number; pigeon_id: string }[],
+  reviewer?: string,
+) {
+  return post<{ confirmed: number }>("/review/identities/batch", {
+    assignments,
+    ...(reviewer ? { reviewer } : {}),
+  });
+}
+
 // --- QC Flags ---
 
 export function getQCFlags(status = "pending", videoId?: number) {
