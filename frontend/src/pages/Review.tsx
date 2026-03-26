@@ -22,6 +22,7 @@ import type { VideoAssignment, QCFlag } from "../types";
 import StatusBadge from "../components/ui/StatusBadge";
 import LoadingState from "../components/ui/LoadingState";
 import SectionError from "../components/ui/SectionError";
+import RegisterPigeonModal from "../components/ui/RegisterPigeonModal";
 import { formatDuration } from "../utils/formatTime";
 import { useToast } from "../components/ui/Toast";
 import { usePageTitle } from "../hooks/usePageTitle";
@@ -75,6 +76,7 @@ export default function Review() {
 function IdentityReview({ videoId }: { videoId: number }) {
   const queryClient = useQueryClient();
   const [currentIdx, setCurrentIdx] = useState(0);
+  const [showRegisterModal, setShowRegisterModal] = useState(false);
   const navigate = useNavigate();
   const toast = useToast();
 
@@ -260,16 +262,16 @@ function IdentityReview({ videoId }: { videoId: number }) {
               </div>
             </button>
           ))}
-          {/* New pigeon placeholder */}
+          {/* New pigeon */}
           <button
-            onClick={() => toast.success("New Pigeon registration coming soon — this feature is in development")}
+            onClick={() => setShowRegisterModal(true)}
             className="border-2 border-dashed border-border rounded-xl p-4 text-center hover:border-accent/50 transition-colors"
           >
             <p className="text-sm font-medium text-text-secondary">
               + New Pigeon
             </p>
             <p className="text-[11px] text-text-secondary/60 mt-0.5">
-              This is a new pigeon
+              Register and assign
             </p>
           </button>
         </div>
@@ -309,6 +311,23 @@ function IdentityReview({ videoId }: { videoId: number }) {
       >
         Done with this Video
       </button>
+
+      {showRegisterModal && (
+        <RegisterPigeonModal
+          onClose={() => setShowRegisterModal(false)}
+          onSuccess={(newPigeonId) => {
+            setShowRegisterModal(false);
+            if (newPigeonId && current) {
+              confirmMutation.mutate({
+                assignmentId: current.id,
+                pigeonId: newPigeonId,
+                originalPigeonId: current.pigeon_id,
+              });
+            }
+            queryClient.invalidateQueries({ queryKey: ["pigeons"] });
+          }}
+        />
+      )}
     </div>
   );
 }
