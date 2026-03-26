@@ -26,6 +26,8 @@ import {
 import { getQCFlags, reviewQCFlag } from "../api/review";
 import StatusBadge from "../components/ui/StatusBadge";
 import LoadingState from "../components/ui/LoadingState";
+import ConfirmDialog from "../components/ui/ConfirmDialog";
+import { useToast } from "../components/ui/Toast";
 
 export default function VideoDetail() {
   usePageTitle("Video Detail");
@@ -35,9 +37,11 @@ export default function VideoDetail() {
   const queryClient = useQueryClient();
   const videoId = Number(id);
 
+  const toast = useToast();
   const [frameNum, setFrameNum] = useState(0);
   const [frameLoading, setFrameLoading] = useState(true);
   const [showOverlays, setShowOverlays] = useState(true);
+  const [showRejectDialog, setShowRejectDialog] = useState(false);
 
   // --- Queries ---
 
@@ -93,6 +97,22 @@ export default function VideoDetail() {
       }),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ["video", videoId] }),
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: () =>
+      updateVideoReview(videoId, {
+        review_status: "rejected",
+        reviewer: "lab_user",
+      }),
+    onSuccess: () => {
+      toast.success("Video rejected");
+      navigate("/videos");
+    },
+    onError: () => {
+      toast.error("Failed to reject video");
+    },
+    onSettled: () => setShowRejectDialog(false),
   });
 
   const dismissFlagMutation = useMutation({
@@ -494,6 +514,26 @@ export default function VideoDetail() {
                 Failed to approve. Please try again.
               </p>
             )}
+
+            {video.review_status !== "rejected" && (
+              <button
+                onClick={() => setShowRejectDialog(true)}
+                className="w-full px-4 py-2 text-sm font-medium border border-error/30 text-error rounded-lg hover:bg-error/5 transition-colors"
+              >
+                Reject Video
+              </button>
+            )}
+
+            <ConfirmDialog
+              open={showRejectDialog}
+              title="Reject this video?"
+              message="It will be excluded from all analytics and exports. You can restore it later."
+              confirmLabel="Reject"
+              variant="danger"
+              loading={rejectMutation.isPending}
+              onConfirm={() => rejectMutation.mutate()}
+              onCancel={() => setShowRejectDialog(false)}
+            />
           </div>
 
           {/* Edit history */}
