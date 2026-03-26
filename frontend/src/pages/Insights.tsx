@@ -453,6 +453,10 @@ export default function Insights() {
             </span>
           </div>
 
+          <p className="text-[12px] text-text-secondary mb-4">
+            Droppings are not attributed to individual pigeons — this shows all detected droppings.
+          </p>
+
           {droppingsQuery.isError ? (
             <SectionError message="Failed to load droppings data." onRetry={() => droppingsQuery.refetch()} />
           ) : droppingsQuery.data?.grid?.length ? (
