@@ -1047,8 +1047,20 @@ function ModelRow({
           className="w-4 h-4 rounded border-border text-accent focus:ring-accent/30 disabled:opacity-30"
         />
       </td>
-      <td className="px-4 py-3 text-text-primary font-medium">
-        {model.version ?? model.model_name}
+      <td className="px-4 py-3">
+        <p className="text-text-primary font-medium">
+          {model.version ?? model.model_name}
+        </p>
+        {model.training_clips != null && model.training_clips > 0 && (
+          <p className="text-[11px] text-text-secondary mt-0.5">
+            Trained on {model.training_clips} clips
+          </p>
+        )}
+        {model.notes && (
+          <p className="text-[11px] text-text-secondary/70 mt-0.5 truncate max-w-[200px]" title={model.notes}>
+            {model.notes}
+          </p>
+        )}
       </td>
       <td className="px-4 py-3 text-text-secondary">
         {model.created_at
