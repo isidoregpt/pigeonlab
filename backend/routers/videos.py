@@ -1,11 +1,13 @@
 import uuid
+from enum import Enum
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from database import get_connection
+from database import get_db
+from utils import get_default_reviewer
 
 router = APIRouter()
 
@@ -22,9 +24,16 @@ class ProcessRequest(BaseModel):
     session_id: str = ""
 
 
+class ReviewStatus(str, Enum):
+    raw = "raw"
+    reviewed = "reviewed"
+    approved = "approved"
+    rejected = "rejected"
+
+
 class ReviewUpdate(BaseModel):
-    review_status: str
-    reviewer: str
+    review_status: ReviewStatus
+    reviewer: str = Field(default_factory=get_default_reviewer)
 
 
 # --- Helpers ---
@@ -38,7 +47,6 @@ def _get_video_or_404(conn, video_id: int) -> dict:
         "SELECT * FROM videos WHERE video_id = ?", (video_id,)
     ).fetchone()
     if not row:
-        conn.close()
         raise HTTPException(status_code=404, detail=f"Video {video_id} not found")
     return _row_to_dict(row)
 
@@ -47,11 +55,10 @@ def _get_video_or_404(conn, video_id: int) -> dict:
 
 @router.get("/sessions")
 async def list_sessions():
-    conn = get_connection()
-    rows = conn.execute(
-        "SELECT DISTINCT session_id FROM videos WHERE session_id IS NOT NULL ORDER BY session_id"
-    ).fetchall()
-    conn.close()
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT session_id FROM videos WHERE session_id IS NOT NULL ORDER BY session_id"
+        ).fetchall()
     return [r["session_id"] for r in rows]
 
 
@@ -61,24 +68,27 @@ async def list_videos(
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
 ):
-    conn = get_connection()
+    with get_db() as conn:
+        order_col = {
+            "date": "processed_at",
+            "name": "video_name",
+            "status": "processing_status",
+            "frames": "total_frames",
+        }.get(sort, "processed_at")
 
-    order_col = {
-        "date": "processed_at",
-        "name": "video_name",
-        "status": "processing_status",
-        "frames": "total_frames",
-    }.get(sort, "processed_at")
+        total_row = conn.execute("SELECT COUNT(*) AS cnt FROM videos").fetchone()
+        total = total_row["cnt"] if total_row else 0
 
-    total_row = conn.execute("SELECT COUNT(*) AS cnt FROM videos").fetchone()
-    total = total_row["cnt"] if total_row else 0
-
-    offset = (page - 1) * per_page
-    rows = conn.execute(
-        f"SELECT * FROM videos ORDER BY {order_col} DESC LIMIT ? OFFSET ?",
-        (per_page, offset),
-    ).fetchall()
-    conn.close()
+        offset = (page - 1) * per_page
+        rows = conn.execute(
+            f"""SELECT v.*, COUNT(DISTINCT va.pigeon_id) AS pigeon_count
+                FROM videos v
+                LEFT JOIN video_assignments va ON va.video_id = v.video_id
+                GROUP BY v.video_id
+                ORDER BY {order_col} DESC
+                LIMIT ? OFFSET ?""",
+            (per_page, offset),
+        ).fetchall()
 
     return {
         "videos": [dict(r) for r in rows],
@@ -90,15 +100,14 @@ async def list_videos(
 
 @router.get("/{video_id}")
 async def get_video(video_id: int):
-    conn = get_connection()
-    video = _get_video_or_404(conn, video_id)
+    with get_db() as conn:
+        video = _get_video_or_404(conn, video_id)
 
-    row = conn.execute(
-        "SELECT COUNT(DISTINCT pigeon_id) AS cnt FROM video_assignments WHERE video_id = ?",
-        (video_id,),
-    ).fetchone()
-    video["pigeon_count"] = row["cnt"] if row else 0
-    conn.close()
+        row = conn.execute(
+            "SELECT COUNT(DISTINCT pigeon_id) AS cnt FROM video_assignments WHERE video_id = ?",
+            (video_id,),
+        ).fetchone()
+        video["pigeon_count"] = row["cnt"] if row else 0
 
     return video
 
@@ -108,31 +117,32 @@ async def process_videos(req: ProcessRequest):
     if not req.video_paths:
         raise HTTPException(status_code=400, detail="video_paths must not be empty.")
 
-    conn = get_connection()
-    job_id = str(uuid.uuid4())
-    queued = 0
+    with get_db() as conn:
+        job_id = str(uuid.uuid4())
+        queued = 0
 
-    for path in req.video_paths:
-        name = Path(path).name
-        camera = req.camera_assignments.get(path, "")
-        conn.execute(
-            """INSERT INTO videos (video_name, session_id, camera_type, processing_status)
-               VALUES (?, ?, ?, 'queued')""",
-            (name, req.session_id, camera),
-        )
-        queued += 1
+        for path in req.video_paths:
+            name = Path(path).name
+            camera = req.camera_assignments.get(path, "")
+            # NOTE: processed_at is left NULL here. The future processing
+            # worker should set processed_at = datetime('now') when it
+            # transitions processing_status to 'completed'.
+            conn.execute(
+                """INSERT INTO videos (video_name, session_id, camera_type, processing_status)
+                   VALUES (?, ?, ?, 'queued')""",
+                (name, req.session_id, camera),
+            )
+            queued += 1
 
-    conn.commit()
-    conn.close()
+        conn.commit()
 
     return {"job_id": job_id, "videos_queued": queued, "status": "queued"}
 
 
 @router.get("/{video_id}/status")
 async def video_status(video_id: int):
-    conn = get_connection()
-    video = _get_video_or_404(conn, video_id)
-    conn.close()
+    with get_db() as conn:
+        video = _get_video_or_404(conn, video_id)
 
     progress_map = {"queued": 0, "processing": 50, "completed": 100, "failed": 0}
     status = video.get("processing_status", "queued")
@@ -142,9 +152,8 @@ async def video_status(video_id: int):
 
 @router.get("/{video_id}/frame/{frame_num}")
 async def get_frame(video_id: int, frame_num: int):
-    conn = get_connection()
-    _get_video_or_404(conn, video_id)
-    conn.close()
+    with get_db() as conn:
+        _get_video_or_404(conn, video_id)
 
     frame_path = DATA_DIR / "frames" / str(video_id) / f"{frame_num:06d}.jpg"
     if not frame_path.is_file():
@@ -159,44 +168,41 @@ async def get_frame(video_id: int, frame_num: int):
 
 @router.put("/{video_id}/review")
 async def update_review(video_id: int, body: ReviewUpdate):
-    conn = get_connection()
-    _get_video_or_404(conn, video_id)
+    with get_db() as conn:
+        _get_video_or_404(conn, video_id)
 
-    conn.execute(
-        "UPDATE videos SET review_status = ? WHERE video_id = ?",
-        (body.review_status, video_id),
-    )
-    conn.commit()
-    conn.close()
+        conn.execute(
+            "UPDATE videos SET review_status = ? WHERE video_id = ?",
+            (body.review_status, video_id),
+        )
+        conn.commit()
 
     return {"video_id": video_id, "review_status": body.review_status, "reviewer": body.reviewer}
 
 
 @router.get("/{video_id}/features")
 async def get_video_features(video_id: int, frame_idx: int = Query(...)):
-    conn = get_connection()
-    _get_video_or_404(conn, video_id)
+    with get_db() as conn:
+        _get_video_or_404(conn, video_id)
 
-    rows = conn.execute(
-        "SELECT * FROM features WHERE video_id = ? AND frame_idx = ?",
-        (video_id, frame_idx),
-    ).fetchall()
-    conn.close()
+        rows = conn.execute(
+            "SELECT * FROM features WHERE video_id = ? AND frame_idx = ?",
+            (video_id, frame_idx),
+        ).fetchall()
 
     return [dict(r) for r in rows]
 
 
 @router.get("/{video_id}/track-edits")
 async def get_video_track_edits(video_id: int):
-    conn = get_connection()
-    _get_video_or_404(conn, video_id)
+    with get_db() as conn:
+        _get_video_or_404(conn, video_id)
 
-    rows = conn.execute(
-        "SELECT id, edit_type, editor, details, edited_at FROM track_edits "
-        "WHERE video_id = ? ORDER BY edited_at DESC",
-        (video_id,),
-    ).fetchall()
-    conn.close()
+        rows = conn.execute(
+            "SELECT id, edit_type, editor, details, edited_at FROM track_edits "
+            "WHERE video_id = ? ORDER BY edited_at DESC",
+            (video_id,),
+        ).fetchall()
 
     return [
         {

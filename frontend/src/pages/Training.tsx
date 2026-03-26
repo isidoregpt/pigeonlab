@@ -27,6 +27,7 @@ import type { ModelRegistryEntry } from "../types";
 import LoadingState from "../components/ui/LoadingState";
 import EmptyState from "../components/ui/EmptyState";
 import SectionError from "../components/ui/SectionError";
+import { useToast } from "../components/ui/Toast";
 import { usePageTitle } from "../hooks/usePageTitle";
 
 /* ================================================================ */
@@ -181,6 +182,11 @@ function ClipCard({
               : "—"}{" "}
             {clip.zone && `· ${clip.zone}`}
           </p>
+          {clip.start_frame != null && clip.end_frame != null && (
+            <p className="text-[11px] text-text-secondary mt-0.5">
+              Frames {clip.start_frame}–{clip.end_frame}
+            </p>
+          )}
         </div>
         <span
           className={`px-2 py-0.5 text-[11px] font-medium rounded-full ${
@@ -194,9 +200,9 @@ function ClipCard({
       </div>
 
       {clip.extraction_reason && (
-        <p className="text-[11px] text-text-secondary truncate">
+        <span className="inline-block px-2 py-0.5 text-[10px] font-medium text-text-secondary bg-bg border border-border rounded-full truncate max-w-full">
           {clip.extraction_reason}
-        </p>
+        </span>
       )}
 
       <button
@@ -347,11 +353,14 @@ function LabelClipsTab({
               </p>
               {currentClip.clip_path && (
                 <p className="text-white/25 text-[11px] mt-1 truncate max-w-md mx-auto px-4">
-                  {currentClip.clip_path}
+                  {currentClip.clip_path.split("/").pop()}
                 </p>
               )}
               <p className="text-white/30 text-[11px] mt-1">
                 Frames {currentClip.start_frame} – {currentClip.end_frame}
+              </p>
+              <p className="text-white/20 text-[10px] mt-2 max-w-xs mx-auto">
+                Video playback will be available in a future update. Use the frame range and metadata to identify the behavior.
               </p>
             </div>
           </div>
@@ -439,6 +448,7 @@ function LabelClipsTab({
    ================================================================ */
 function TrainModelTab() {
   const queryClient = useQueryClient();
+  const toast = useToast();
   const [backbone, setBackbone] = useState("r3d_18");
   const [epochs, setEpochs] = useState(50);
   const [batchSize, setBatchSize] = useState(16);
@@ -459,6 +469,10 @@ function TrainModelTab() {
     onSuccess: (data) => {
       setJobId(data.job_id);
       queryClient.invalidateQueries({ queryKey: ["models"] });
+      toast.success(`Training started! Job ID: ${data.job_id}`);
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : "Training failed. Please try again.");
     },
   });
 
@@ -491,6 +505,9 @@ function TrainModelTab() {
     epochs: epochs < 1 || epochs > 500 ? "Must be 1–500." : null,
     batchSize: batchSize < 1 || batchSize > 256 ? "Must be 1–256." : null,
     lr: lr < 0.00001 || lr > 1 ? "Must be 0.00001–1.0." : null,
+    classes: selectedClasses.size > 0 && selectedClasses.size < 2
+      ? "Select at least 2 behavior classes to train a classifier."
+      : null,
   };
   const hasConfigError = Object.values(configErrors).some(Boolean);
 
@@ -705,13 +722,16 @@ function TrainModelTab() {
             </label>
           ))}
         </div>
+        {configErrors.classes && (
+          <p className="text-[12px] text-error mt-2">{configErrors.classes}</p>
+        )}
       </section>
 
       {/* Launch */}
       <div className="space-y-3">
         <button
           onClick={launch}
-          disabled={trainMutation.isPending || selectedClasses.size === 0 || hasConfigError}
+          disabled={trainMutation.isPending || selectedClasses.size < 2 || hasConfigError}
           className="flex items-center gap-2 px-5 py-2.5 bg-accent text-white text-sm font-medium rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {trainMutation.isPending ? (
@@ -1033,8 +1053,20 @@ function ModelRow({
           className="w-4 h-4 rounded border-border text-accent focus:ring-accent/30 disabled:opacity-30"
         />
       </td>
-      <td className="px-4 py-3 text-text-primary font-medium">
-        {model.version ?? model.model_name}
+      <td className="px-4 py-3">
+        <p className="text-text-primary font-medium">
+          {model.version ?? model.model_name}
+        </p>
+        {model.training_clips != null && model.training_clips > 0 && (
+          <p className="text-[11px] text-text-secondary mt-0.5">
+            Trained on {model.training_clips} clips
+          </p>
+        )}
+        {model.notes && (
+          <p className="text-[11px] text-text-secondary/70 mt-0.5 truncate max-w-[200px]" title={model.notes}>
+            {model.notes}
+          </p>
+        )}
       </td>
       <td className="px-4 py-3 text-text-secondary">
         {model.created_at

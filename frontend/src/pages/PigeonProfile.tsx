@@ -64,6 +64,7 @@ export default function PigeonProfile() {
   const [editMarkers, setEditMarkers] = useState("");
   const [editNotes, setEditNotes] = useState("");
   const [heatmapPeriod, setHeatmapPeriod] = useState<"day" | "week" | "month">("week");
+  const [behaviorPeriod, setBehaviorPeriod] = useState<"day" | "week" | "month">("week");
 
   // Fetch all three in parallel
   const profileQuery = useQuery({
@@ -73,8 +74,8 @@ export default function PigeonProfile() {
   });
 
   const behaviorsQuery = useQuery({
-    queryKey: ["pigeon-behaviors", pigeonId],
-    queryFn: () => getPigeonBehaviors(pigeonId, "week"),
+    queryKey: ["pigeon-behaviors", pigeonId, behaviorPeriod],
+    queryFn: () => getPigeonBehaviors(pigeonId, behaviorPeriod),
     enabled: pigeonId.length > 0,
   });
 
@@ -253,6 +254,12 @@ export default function PigeonProfile() {
                     {pigeon.total_frames_observed > 0 && (
                       <span>Observed in {pigeon.total_frames_observed.toLocaleString()} frames</span>
                     )}
+                    {pigeon.avg_velocity_mm_s != null && (
+                      <span>Average speed: {pigeon.avg_velocity_mm_s.toFixed(1)} mm/s</span>
+                    )}
+                    {pigeon.session_count != null && pigeon.session_count > 0 && (
+                      <span>Observed in {pigeon.session_count} session{pigeon.session_count !== 1 ? "s" : ""}</span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -376,8 +383,14 @@ export default function PigeonProfile() {
             Zone Breakdown
           </h2>
           <p className="text-sm text-text-secondary">
-            No zone data available yet.
+            No zone data available yet. Zone data appears after behaviors are confirmed in the Review section.
           </p>
+          <Link
+            to="/review?type=behavior"
+            className="inline-block mt-2 text-sm font-medium text-accent hover:text-accent/80 transition-colors"
+          >
+            Review Behaviors →
+          </Link>
         </div>
       ) : null}
 
@@ -386,9 +399,26 @@ export default function PigeonProfile() {
         <SectionSkeleton rows={4} />
       ) : behaviorData.length > 0 ? (
         <div className="bg-surface border border-border rounded-xl p-5">
-          <h2 className="text-sm font-semibold text-text-primary mb-4">
-            What {pigeon?.pigeon_id} Does
-          </h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-semibold text-text-primary">
+              What {pigeon?.pigeon_id} Does
+            </h2>
+            <div className="flex items-center gap-1">
+              {(["day", "week", "month"] as const).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setBehaviorPeriod(p)}
+                  className={`px-2.5 py-1 text-[11px] font-medium rounded-lg transition-colors ${
+                    behaviorPeriod === p
+                      ? "bg-accent text-white"
+                      : "text-text-secondary hover:text-text-primary hover:bg-bg"
+                  }`}
+                >
+                  {p === "day" ? "Day" : p === "week" ? "Week" : "Month"}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="h-48">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
@@ -438,6 +468,18 @@ export default function PigeonProfile() {
           </p>
         </div>
       ) : null}
+
+      {/* ===== Behavior Timeline (stub) ===== */}
+      <section className="bg-surface border border-border rounded-xl p-5">
+        <h2 className="text-sm font-semibold text-text-primary mb-2">
+          Behavior Timeline
+        </h2>
+        <div className="rounded-lg border border-dashed border-border bg-bg/50 p-6 text-center">
+          <p className="text-sm text-text-secondary">
+            A Gantt-style timeline showing when behaviors occur across sessions will be available in a future update.
+          </p>
+        </div>
+      </section>
 
       {/* ===== Identity Confidence ===== */}
       {identityQuery.isLoading ? (

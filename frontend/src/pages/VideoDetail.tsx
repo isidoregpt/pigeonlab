@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { usePageTitle } from "../hooks/usePageTitle";
 import {
@@ -13,6 +13,8 @@ import {
   AlertTriangle,
   Check,
   Loader2,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import {
   getVideo,
@@ -24,16 +26,22 @@ import {
 import { getQCFlags, reviewQCFlag } from "../api/review";
 import StatusBadge from "../components/ui/StatusBadge";
 import LoadingState from "../components/ui/LoadingState";
+import ConfirmDialog from "../components/ui/ConfirmDialog";
+import { useToast } from "../components/ui/Toast";
 
 export default function VideoDetail() {
   usePageTitle("Video Detail");
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const videoId = Number(id);
 
+  const toast = useToast();
   const [frameNum, setFrameNum] = useState(0);
   const [frameLoading, setFrameLoading] = useState(true);
+  const [showOverlays, setShowOverlays] = useState(true);
+  const [showRejectDialog, setShowRejectDialog] = useState(false);
 
   // --- Queries ---
 
@@ -44,6 +52,17 @@ export default function VideoDetail() {
   });
 
   const totalFrames = videoQuery.data?.total_frames ?? 0;
+
+  // Jump to ?frame=N on mount once totalFrames is known
+  useEffect(() => {
+    const frameParam = searchParams.get("frame");
+    if (frameParam !== null && totalFrames > 0) {
+      const parsed = Number(frameParam);
+      if (!Number.isNaN(parsed)) {
+        setFrameNum(Math.max(0, Math.min(parsed, totalFrames - 1)));
+      }
+    }
+  }, [totalFrames, searchParams]);
 
   const featuresQuery = useQuery({
     queryKey: ["video-features", videoId, frameNum],
@@ -78,6 +97,22 @@ export default function VideoDetail() {
       }),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ["video", videoId] }),
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: () =>
+      updateVideoReview(videoId, {
+        review_status: "rejected",
+        reviewer: "lab_user",
+      }),
+    onSuccess: () => {
+      toast.success("Video rejected");
+      navigate("/videos");
+    },
+    onError: () => {
+      toast.error("Failed to reject video");
+    },
+    onSettled: () => setShowRejectDialog(false),
   });
 
   const dismissFlagMutation = useMutation({
@@ -123,6 +158,18 @@ export default function VideoDetail() {
     return () => window.removeEventListener("keydown", handleKey);
   }, [frameNum, goToFrame]);
 
+  // Preload adjacent frames for instant navigation
+  useEffect(() => {
+    const preload = (n: number) => {
+      if (n >= 0 && n < totalFrames) {
+        const img = new Image();
+        img.src = getFrameUrl(videoId, n, showOverlays);
+      }
+    };
+    preload(frameNum - 1);
+    preload(frameNum + 1);
+  }, [videoId, frameNum, totalFrames, showOverlays]);
+
   // --- Render ---
 
   if (videoQuery.isLoading) return <LoadingState variant="detail" />;
@@ -164,6 +211,15 @@ export default function VideoDetail() {
         <div className="flex-1 min-w-0 space-y-4">
           {/* Frame viewer */}
           <div className="bg-surface border border-border rounded-xl overflow-hidden">
+            <div className="flex items-center justify-end px-3 py-2 border-b border-border">
+              <button
+                onClick={() => setShowOverlays((v) => !v)}
+                className="flex items-center gap-1.5 text-xs text-text-secondary hover:text-text-primary transition-colors"
+              >
+                {showOverlays ? <Eye size={14} /> : <EyeOff size={14} />}
+                {showOverlays ? "Hide Overlays" : "Show Overlays"}
+              </button>
+            </div>
             <div className="relative bg-black aspect-video flex items-center justify-center">
               {frameLoading && (
                 <div className="absolute inset-0 flex items-center justify-center z-10">
@@ -172,7 +228,7 @@ export default function VideoDetail() {
               )}
               {totalFrames > 0 ? (
                 <img
-                  src={getFrameUrl(videoId, frameNum, true)}
+                  src={getFrameUrl(videoId, frameNum, showOverlays)}
                   alt={`Frame ${frameNum}`}
                   className={`max-w-full max-h-full object-contain transition-opacity ${frameLoading ? "opacity-30" : "opacity-100"}`}
                   onLoad={() => setFrameLoading(false)}
@@ -240,6 +296,11 @@ export default function VideoDetail() {
                 <p className="text-[11px] text-text-secondary/60">
                   ← → to navigate frames, Shift+← → to jump 10 frames
                 </p>
+                <p className="text-sm font-medium text-text-primary tabular-nums mt-1">
+                  {video.fps != null && video.fps > 0
+                    ? formatTimestamp(frameNum / video.fps)
+                    : "FPS unknown"}
+                </p>
               </div>
             )}
           </div>
@@ -286,7 +347,9 @@ export default function VideoDetail() {
             </h2>
             {features.length === 0 ? (
               <p className="text-sm text-text-secondary">
-                No pigeon data for this frame.
+                {video.processing_status !== "completed"
+                  ? "This video hasn't been processed yet."
+                  : "No pigeons detected in this frame."}
               </p>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -297,7 +360,7 @@ export default function VideoDetail() {
                     <div
                       key={f.id}
                       onClick={() => navigate(`/pigeons/${f.pigeon_id}`)}
-                      className="relative bg-surface border border-border rounded-xl px-4 py-3 flex items-center gap-3 cursor-pointer hover:border-accent hover:shadow-md transition-all overflow-hidden"
+                      className="relative bg-surface border-2 border-border rounded-xl px-4 py-3 flex items-center gap-3 cursor-pointer hover:border-accent hover:bg-accent/[0.03] hover:shadow-md transition-all overflow-hidden"
                     >
                       {/* Confidence bar */}
                       <div
@@ -382,6 +445,14 @@ export default function VideoDetail() {
               {video.session_id && (
                 <MetaRow label="Session" value={video.session_id} />
               )}
+              <MetaRow
+                label="Processed"
+                value={video.processed_at ? new Date(video.processed_at).toLocaleDateString() : "Not yet"}
+              />
+              <MetaRow
+                label="Model"
+                value={video.model_version ?? "—"}
+              />
             </div>
 
             {/* Status badges */}
@@ -411,6 +482,11 @@ export default function VideoDetail() {
               className="w-full px-4 py-2 text-sm font-medium border border-border rounded-lg hover:bg-bg transition-colors text-text-primary"
             >
               Review QC Flags
+              {(qcQuery.data?.length ?? 0) > 0 && (
+                <span className="ml-1.5 text-warning text-xs font-medium">
+                  ({qcQuery.data!.length} pending)
+                </span>
+              )}
             </button>
 
             {video.review_status === "reviewed" && (
@@ -438,6 +514,26 @@ export default function VideoDetail() {
                 Failed to approve. Please try again.
               </p>
             )}
+
+            {video.review_status !== "rejected" && (
+              <button
+                onClick={() => setShowRejectDialog(true)}
+                className="w-full px-4 py-2 text-sm font-medium border border-error/30 text-error rounded-lg hover:bg-error/5 transition-colors"
+              >
+                Reject Video
+              </button>
+            )}
+
+            <ConfirmDialog
+              open={showRejectDialog}
+              title="Reject this video?"
+              message="It will be excluded from all analytics and exports. You can restore it later."
+              confirmLabel="Reject"
+              variant="danger"
+              loading={rejectMutation.isPending}
+              onConfirm={() => rejectMutation.mutate()}
+              onCancel={() => setShowRejectDialog(false)}
+            />
           </div>
 
           {/* Edit history */}

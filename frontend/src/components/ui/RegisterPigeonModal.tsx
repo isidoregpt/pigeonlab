@@ -4,7 +4,7 @@ import { createPigeon } from "../../api/pigeons";
 
 interface RegisterPigeonModalProps {
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (pigeonId?: string) => void;
 }
 
 export default function RegisterPigeonModal({ onClose, onSuccess }: RegisterPigeonModalProps) {
@@ -60,7 +60,7 @@ export default function RegisterPigeonModal({ onClose, onSuccess }: RegisterPige
         physical_markers: markers.trim() || undefined,
         notes: notes.trim() || undefined,
       });
-      onSuccess();
+      onSuccess(name.trim());
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to register pigeon. Please try again.",

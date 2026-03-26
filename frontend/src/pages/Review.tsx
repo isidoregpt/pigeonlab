@@ -6,6 +6,7 @@ import {
   getNextVideoForIdentityReview,
   getUnconfirmedIdentities,
   reviewIdentity,
+  batchConfirmIdentities,
   getQCFlags,
   reviewQCFlag,
   batchResolveQCFlags,
@@ -21,6 +22,7 @@ import type { VideoAssignment, QCFlag } from "../types";
 import StatusBadge from "../components/ui/StatusBadge";
 import LoadingState from "../components/ui/LoadingState";
 import SectionError from "../components/ui/SectionError";
+import RegisterPigeonModal from "../components/ui/RegisterPigeonModal";
 import { formatDuration } from "../utils/formatTime";
 import { useToast } from "../components/ui/Toast";
 import { usePageTitle } from "../hooks/usePageTitle";
@@ -74,6 +76,8 @@ export default function Review() {
 function IdentityReview({ videoId }: { videoId: number }) {
   const queryClient = useQueryClient();
   const [currentIdx, setCurrentIdx] = useState(0);
+  const [showRegisterModal, setShowRegisterModal] = useState(false);
+  const [pendingPigeonId, setPendingPigeonId] = useState<string | null>(null);
   const navigate = useNavigate();
   const toast = useToast();
 
@@ -91,25 +95,38 @@ function IdentityReview({ videoId }: { videoId: number }) {
     mutationFn: ({
       assignmentId,
       pigeonId,
+      originalPigeonId,
     }: {
       assignmentId: number;
       pigeonId: string;
-    }) =>
-      reviewIdentity({
+      originalPigeonId: string;
+    }) => {
+      const isReassign = pigeonId !== originalPigeonId;
+      return reviewIdentity({
         assignment_id: assignmentId,
-        action: "confirm",
+        action: isReassign ? "reassign" : "confirm",
         pigeon_id: pigeonId,
-        reviewer: "lab_user",
-      }),
+        ...(isReassign
+          ? { old_pigeon_id: originalPigeonId, new_pigeon_id: pigeonId }
+          : {}),
+      });
+    },
     onSuccess: (_data, variables) => {
-      toast.success(`Identity confirmed as ${variables.pigeonId}`);
+      const isReassign = variables.pigeonId !== variables.originalPigeonId;
+      toast.success(
+        isReassign
+          ? `Reassigned from ${variables.originalPigeonId} to ${variables.pigeonId}`
+          : `Identity confirmed as ${variables.pigeonId}`,
+      );
       queryClient.invalidateQueries({ queryKey: ["unconfirmed-identities", videoId] });
       queryClient.invalidateQueries({ queryKey: ["attention-count"] });
       queryClient.invalidateQueries({ queryKey: ["attention-items"] });
       queryClient.invalidateQueries({ queryKey: ["stats-today"] });
+      setPendingPigeonId(null);
       advance();
     },
     onError: () => {
+      setPendingPigeonId(null);
       toast.error("Failed to confirm identity. Please try again.");
     },
   });
@@ -185,6 +202,19 @@ function IdentityReview({ videoId }: { videoId: number }) {
             className="max-w-full max-h-full object-contain"
           />
         </div>
+        {(current.confidence !== null || current.match_method) && (
+          <div className="px-4 py-2.5 bg-surface border-t border-border text-xs text-text-secondary">
+            System guess: <span className="font-medium text-text-primary">{current.pigeon_id}</span>
+            {current.confidence !== null && (
+              <span className="ml-1">
+                ({(current.confidence * 100).toFixed(0)}% confidence{current.match_method ? `, ${current.match_method.replace(/_/g, " ")}` : ""})
+              </span>
+            )}
+            {current.confidence === null && current.match_method && (
+              <span className="ml-1">({current.match_method.replace(/_/g, " ")})</span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Counter */}
@@ -210,17 +240,23 @@ function IdentityReview({ videoId }: { videoId: number }) {
           {pigeons.map((p) => (
             <button
               key={p.pigeon_id}
-              onClick={() =>
+              onClick={() => {
+                setPendingPigeonId(p.pigeon_id);
                 confirmMutation.mutate({
                   assignmentId: current.id,
                   pigeonId: p.pigeon_id,
-                })
-              }
+                  originalPigeonId: current.pigeon_id,
+                });
+              }}
               disabled={confirmMutation.isPending}
               className="bg-surface border border-border rounded-xl p-4 text-left hover:border-accent hover:shadow-md transition-all group disabled:opacity-50"
             >
               <div className="flex items-center gap-3">
-                <span className="text-xl">🕊️</span>
+                {confirmMutation.isPending && pendingPigeonId === p.pigeon_id ? (
+                  <Loader2 size={20} className="animate-spin text-accent shrink-0" />
+                ) : (
+                  <span className="text-xl">🕊️</span>
+                )}
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-text-primary group-hover:text-accent truncate">
                     {p.pigeon_id}
@@ -234,16 +270,16 @@ function IdentityReview({ videoId }: { videoId: number }) {
               </div>
             </button>
           ))}
-          {/* New pigeon placeholder */}
+          {/* New pigeon */}
           <button
-            onClick={() => toast.success("New Pigeon registration coming soon — this feature is in development")}
+            onClick={() => setShowRegisterModal(true)}
             className="border-2 border-dashed border-border rounded-xl p-4 text-center hover:border-accent/50 transition-colors"
           >
             <p className="text-sm font-medium text-text-secondary">
               + New Pigeon
             </p>
             <p className="text-[11px] text-text-secondary/60 mt-0.5">
-              This is a new pigeon
+              Register and assign
             </p>
           </button>
         </div>
@@ -283,6 +319,23 @@ function IdentityReview({ videoId }: { videoId: number }) {
       >
         Done with this Video
       </button>
+
+      {showRegisterModal && (
+        <RegisterPigeonModal
+          onClose={() => setShowRegisterModal(false)}
+          onSuccess={(newPigeonId) => {
+            setShowRegisterModal(false);
+            if (newPigeonId && current) {
+              confirmMutation.mutate({
+                assignmentId: current.id,
+                pigeonId: newPigeonId,
+                originalPigeonId: current.pigeon_id,
+              });
+            }
+            queryClient.invalidateQueries({ queryKey: ["pigeons"] });
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -308,14 +361,27 @@ function QCReview({ videoId }: { videoId?: number }) {
         resolved_action: "accepted",
         reviewer: "lab_user",
       }),
+    onMutate: async (flagId) => {
+      await queryClient.cancelQueries({ queryKey: ["qc-flags", videoId] });
+      const previous = queryClient.getQueryData<QCFlag[]>(["qc-flags", videoId]);
+      queryClient.setQueryData<QCFlag[]>(["qc-flags", videoId], (old) =>
+        old ? old.filter((f) => f.id !== flagId) : [],
+      );
+      return { previous };
+    },
     onSuccess: () => {
       toast.success("QC flag resolved");
-      queryClient.invalidateQueries({ queryKey: ["qc-flags", videoId] });
       queryClient.invalidateQueries({ queryKey: ["attention-count"] });
       queryClient.invalidateQueries({ queryKey: ["attention-items"] });
     },
-    onError: () => {
+    onError: (_err, _flagId, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(["qc-flags", videoId], context.previous);
+      }
       toast.error("Failed to resolve QC flag");
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["qc-flags", videoId] });
     },
   });
 
@@ -327,14 +393,28 @@ function QCReview({ videoId }: { videoId?: number }) {
         resolved_action: "accepted",
         reviewer: "lab_user",
       }),
+    onMutate: async (flagIds) => {
+      await queryClient.cancelQueries({ queryKey: ["qc-flags", videoId] });
+      const previous = queryClient.getQueryData<QCFlag[]>(["qc-flags", videoId]);
+      const idSet = new Set(flagIds);
+      queryClient.setQueryData<QCFlag[]>(["qc-flags", videoId], (old) =>
+        old ? old.filter((f) => !idSet.has(f.id)) : [],
+      );
+      return { previous };
+    },
     onSuccess: () => {
       toast.success("All low-severity flags resolved");
-      queryClient.invalidateQueries({ queryKey: ["qc-flags", videoId] });
       queryClient.invalidateQueries({ queryKey: ["attention-count"] });
       queryClient.invalidateQueries({ queryKey: ["attention-items"] });
     },
-    onError: () => {
+    onError: (_err, _flagIds, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(["qc-flags", videoId], context.previous);
+      }
       toast.error("Failed to batch resolve flags");
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["qc-flags", videoId] });
     },
   });
 
@@ -695,10 +775,154 @@ function BehaviorReview() {
 }
 
 /* ================================================================
+   5a. Batch Confirm Modal
+   ================================================================ */
+function BatchConfirmModal({
+  onClose,
+}: {
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const toast = useToast();
+
+  const nextVideoQuery = useQuery({
+    queryKey: ["next-identity-video"],
+    queryFn: getNextVideoForIdentityReview,
+  });
+
+  const videoId = nextVideoQuery.data?.video_id ?? null;
+
+  const assignmentsQuery = useQuery({
+    queryKey: ["unconfirmed-identities-batch", videoId],
+    queryFn: () => getUnconfirmedIdentities(videoId!),
+    enabled: videoId !== null,
+  });
+
+  const assignments = assignmentsQuery.data ?? [];
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [submitting, setSubmitting] = useState(false);
+
+  const toggle = (id: number) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const selectAbove85 = () => {
+    const ids = assignments
+      .filter((a) => (a.confidence ?? 0) >= 0.85)
+      .map((a) => a.id);
+    setSelected(new Set(ids));
+  };
+
+  const allAbove85Selected =
+    assignments.filter((a) => (a.confidence ?? 0) >= 0.85).length > 0 &&
+    assignments
+      .filter((a) => (a.confidence ?? 0) >= 0.85)
+      .every((a) => selected.has(a.id));
+
+  const handleConfirm = async () => {
+    const items = assignments
+      .filter((a) => selected.has(a.id))
+      .map((a) => ({ assignment_id: a.id, pigeon_id: a.pigeon_id }));
+    if (items.length === 0) return;
+
+    setSubmitting(true);
+    try {
+      const result = await batchConfirmIdentities(items);
+      toast.success(`Confirmed ${result.confirmed} identit${result.confirmed === 1 ? "y" : "ies"}.`);
+      queryClient.invalidateQueries({ queryKey: ["attention-count"] });
+      queryClient.invalidateQueries({ queryKey: ["next-identity-video"] });
+      queryClient.invalidateQueries({ queryKey: ["unconfirmed-identities-batch"] });
+      onClose();
+    } catch {
+      toast.error("Batch confirmation failed. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const loading = nextVideoQuery.isLoading || assignmentsQuery.isLoading;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+      <div
+        className="bg-surface border border-border rounded-xl shadow-lg w-full max-w-lg max-h-[80vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+          <h2 className="text-sm font-bold text-text-primary">Batch Confirm Identities</h2>
+          <button onClick={onClose} className="text-text-secondary hover:text-text-primary text-lg leading-none">&times;</button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 py-3 space-y-1">
+          {loading ? (
+            <LoadingState variant="list" />
+          ) : assignments.length === 0 ? (
+            <p className="text-sm text-text-secondary py-4 text-center">No unconfirmed identities found.</p>
+          ) : (
+            <>
+              <label className="flex items-center gap-2 py-2 text-xs text-text-secondary cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={allAbove85Selected}
+                  onChange={() => (allAbove85Selected ? setSelected(new Set()) : selectAbove85())}
+                  className="accent-accent"
+                />
+                Select all above 85% confidence
+              </label>
+              <div className="border-t border-border" />
+              {assignments.map((a) => (
+                <label
+                  key={a.id}
+                  className="flex items-center gap-3 py-2 cursor-pointer hover:bg-accent/[0.03] rounded-lg px-1"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selected.has(a.id)}
+                    onChange={() => toggle(a.id)}
+                    className="accent-accent"
+                  />
+                  <span className="text-sm text-text-primary font-medium truncate">
+                    {a.pigeon_id}
+                  </span>
+                  <span className="ml-auto text-xs text-text-secondary tabular-nums">
+                    {a.confidence !== null ? `${(a.confidence * 100).toFixed(0)}%` : "—"}
+                  </span>
+                </label>
+              ))}
+            </>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-border">
+          <button
+            onClick={onClose}
+            className="px-3 py-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleConfirm}
+            disabled={selected.size === 0 || submitting}
+            className="px-4 py-1.5 text-sm font-medium text-white bg-accent rounded-lg hover:bg-accent/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            {submitting ? "Confirming…" : `Confirm Selected (${selected.size})`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ================================================================
    5. General Review Queue
    ================================================================ */
 function ReviewQueue() {
   const navigate = useNavigate();
+  const [showBatchModal, setShowBatchModal] = useState(false);
 
   const countQuery = useQuery({
     queryKey: ["attention-count"],
@@ -798,17 +1022,31 @@ function ReviewQueue() {
               </div>
             </div>
             {s.count > 0 && (
-              <button
-                onClick={s.action}
-                className="flex items-center gap-1 text-sm font-medium text-accent hover:text-accent/80 transition-colors whitespace-nowrap shrink-0"
-              >
-                Start Reviewing
-                <ChevronRight size={14} />
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                {s.key === "identity" && (
+                  <button
+                    onClick={() => setShowBatchModal(true)}
+                    className="px-3 py-1.5 text-xs font-medium text-accent border border-accent/30 rounded-lg hover:bg-accent/5 transition-colors whitespace-nowrap"
+                  >
+                    Batch Confirm
+                  </button>
+                )}
+                <button
+                  onClick={s.action}
+                  className="flex items-center gap-1 text-sm font-medium text-accent hover:text-accent/80 transition-colors whitespace-nowrap"
+                >
+                  Start Reviewing
+                  <ChevronRight size={14} />
+                </button>
+              </div>
             )}
           </div>
         ))}
       </div>
+
+      {showBatchModal && (
+        <BatchConfirmModal onClose={() => setShowBatchModal(false)} />
+      )}
     </div>
   );
 }

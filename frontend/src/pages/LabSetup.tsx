@@ -1,10 +1,17 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { usePageTitle } from "../hooks/usePageTitle";
-import { getZones, getSystemInfo } from "../api/settings";
+import { getZones, getSystemInfo, resetDatabase, seedDatabase } from "../api/settings";
+import ConfirmDialog from "../components/ui/ConfirmDialog";
+import { useToast } from "../components/ui/Toast";
 
 export default function LabSetup() {
   usePageTitle("Settings");
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [showSeedConfirm, setShowSeedConfirm] = useState(false);
 
   const zonesQuery = useQuery({
     queryKey: ["settings-zones"],
@@ -14,6 +21,30 @@ export default function LabSetup() {
   const infoQuery = useQuery({
     queryKey: ["settings-info"],
     queryFn: getSystemInfo,
+  });
+
+  const resetMutation = useMutation({
+    mutationFn: resetDatabase,
+    onSuccess: () => {
+      toast.success("Database has been reset.");
+      setShowResetConfirm(false);
+      queryClient.invalidateQueries();
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : "Database reset failed.");
+    },
+  });
+
+  const seedMutation = useMutation({
+    mutationFn: seedDatabase,
+    onSuccess: () => {
+      toast.success("Sample data loaded successfully.");
+      setShowSeedConfirm(false);
+      queryClient.invalidateQueries();
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : "Failed to load sample data.");
+    },
   });
 
   const zones = zonesQuery.data?.zones ?? [];
@@ -130,11 +161,73 @@ export default function LabSetup() {
             </div>
           </>
         ) : (
-          <p className="text-sm text-text-secondary">
-            Could not load system information.
-          </p>
+          <div className="text-center py-4 space-y-2">
+            <p className="text-sm text-text-secondary">Could not load system information.</p>
+            <button
+              onClick={() => infoQuery.refetch()}
+              className="text-sm font-medium text-accent hover:text-accent/80 transition-colors"
+            >
+              Try Again
+            </button>
+          </div>
         )}
       </section>
+
+      {/* Danger Zone */}
+      <section className="border-2 border-error/30 rounded-xl p-5 space-y-3">
+        <h2 className="text-sm font-semibold text-error">Danger Zone</h2>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium text-text-primary">Reset Database</p>
+            <p className="text-[12px] text-text-secondary">
+              Delete all data and start fresh. This cannot be undone.
+            </p>
+          </div>
+          <button
+            onClick={() => setShowResetConfirm(true)}
+            className="px-4 py-2 text-sm font-medium text-error border border-error/30 rounded-lg hover:bg-error/5 transition-colors whitespace-nowrap"
+          >
+            Reset Database
+          </button>
+        </div>
+        <div className="border-t border-error/15" />
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium text-text-primary">Load Sample Data</p>
+            <p className="text-[12px] text-text-secondary">
+              Add demo pigeons, videos, and other sample data for testing.
+            </p>
+          </div>
+          <button
+            onClick={() => setShowSeedConfirm(true)}
+            className="px-4 py-2 text-sm font-medium text-warning border border-warning/30 rounded-lg hover:bg-warning/5 transition-colors whitespace-nowrap"
+          >
+            Load Sample Data
+          </button>
+        </div>
+      </section>
+
+      <ConfirmDialog
+        open={showResetConfirm}
+        title="Reset Database"
+        message="This will delete all data including videos, pigeons, and training models. This cannot be undone. Are you sure?"
+        confirmLabel="Reset Everything"
+        variant="danger"
+        onConfirm={() => resetMutation.mutate()}
+        onCancel={() => setShowResetConfirm(false)}
+        loading={resetMutation.isPending}
+      />
+
+      <ConfirmDialog
+        open={showSeedConfirm}
+        title="Load Sample Data"
+        message="This will add sample pigeons, videos, and other demo data. Existing data will not be removed."
+        confirmLabel="Load Data"
+        variant="warning"
+        onConfirm={() => seedMutation.mutate()}
+        onCancel={() => setShowSeedConfirm(false)}
+        loading={seedMutation.isPending}
+      />
     </div>
   );
 }

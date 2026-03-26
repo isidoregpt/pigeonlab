@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from database import get_connection
+from database import get_db
 
 router = APIRouter()
 
@@ -38,7 +38,6 @@ async def create_export(body: ExportRequest):
             detail=f"Unsupported export format '{body.format}'. Only 'csv' is currently supported.",
         )
 
-    conn = get_connection()
     EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
     files_included = []
@@ -46,114 +45,115 @@ async def create_export(body: ExportRequest):
 
     export_id = str(uuid.uuid4())[:8]
 
-    for table_name in body.include:
-        if table_name == "features":
-            period_sql, params = _period_clause(body.filters.get("period"))
+    with get_db() as conn:
+        for table_name in body.include:
+            if table_name == "features":
+                period_sql, params = _period_clause(body.filters.get("period"))
 
-            video_id = body.filters.get("video_id")
-            video_sql = ""
-            if video_id is not None:
-                video_sql = "AND f.video_id = ?"
-                params.append(video_id)
+                video_id = body.filters.get("video_id")
+                video_sql = ""
+                if video_id is not None:
+                    video_sql = "AND f.video_id = ?"
+                    params.append(video_id)
 
-            pigeon_id = body.filters.get("pigeon_id")
-            pigeon_sql = ""
-            if pigeon_id:
-                pigeon_sql = "AND f.pigeon_id = ?"
-                params.append(pigeon_id)
+                pigeon_id = body.filters.get("pigeon_id")
+                pigeon_sql = ""
+                if pigeon_id:
+                    pigeon_sql = "AND f.pigeon_id = ?"
+                    params.append(pigeon_id)
 
-            rows = conn.execute(
-                f"""SELECT f.* FROM features f
-                    JOIN videos v ON f.video_id = v.video_id
-                    WHERE v.review_status = 'approved'
-                      {period_sql} {video_sql} {pigeon_sql}
-                    ORDER BY f.video_id, f.frame_idx""",
-                params,
-            ).fetchall()
-
-            if not rows:
-                # Fall back to all features if none approved
                 rows = conn.execute(
                     f"""SELECT f.* FROM features f
                         JOIN videos v ON f.video_id = v.video_id
-                        WHERE 1=1 {period_sql} {video_sql} {pigeon_sql}
+                        WHERE v.review_status = 'approved'
+                          {period_sql} {video_sql} {pigeon_sql}
                         ORDER BY f.video_id, f.frame_idx""",
                     params,
                 ).fetchall()
 
-            filename = f"features_{export_id}.csv"
-            filepath = EXPORTS_DIR / filename
+                if not rows:
+                    # Fall back to all features if none approved
+                    rows = conn.execute(
+                        f"""SELECT f.* FROM features f
+                            JOIN videos v ON f.video_id = v.video_id
+                            WHERE 1=1 {period_sql} {video_sql} {pigeon_sql}
+                            ORDER BY f.video_id, f.frame_idx""",
+                        params,
+                    ).fetchall()
 
-            if rows:
-                columns = rows[0].keys()
-                output = io.StringIO()
-                writer = csv.writer(output)
-                writer.writerow(columns)
-                for row in rows:
-                    writer.writerow([row[c] for c in columns])
+                filename = f"features_{export_id}.csv"
+                filepath = EXPORTS_DIR / filename
 
-                filepath.write_text(output.getvalue())
-                total_rows += len(rows)
-            else:
-                filepath.write_text("")
+                if rows:
+                    columns = rows[0].keys()
+                    output = io.StringIO()
+                    writer = csv.writer(output)
+                    writer.writerow(columns)
+                    for row in rows:
+                        writer.writerow([row[c] for c in columns])
 
-            files_included.append(filename)
+                    filepath.write_text(output.getvalue())
+                    total_rows += len(rows)
+                else:
+                    filepath.write_text("")
 
-        elif table_name == "behaviors":
-            period_sql, params = _period_clause(body.filters.get("period"))
+                files_included.append(filename)
 
-            rows = conn.execute(
-                f"""SELECT b.* FROM behaviors b
-                    JOIN videos v ON b.video_id = v.video_id
-                    WHERE 1=1 {period_sql}
-                    ORDER BY b.video_id, b.start_frame""",
-                params,
-            ).fetchall()
+            elif table_name == "behaviors":
+                period_sql, params = _period_clause(body.filters.get("period"))
 
-            filename = f"behaviors_{export_id}.csv"
-            filepath = EXPORTS_DIR / filename
+                rows = conn.execute(
+                    f"""SELECT b.* FROM behaviors b
+                        JOIN videos v ON b.video_id = v.video_id
+                        WHERE 1=1 {period_sql}
+                        ORDER BY b.video_id, b.start_frame""",
+                    params,
+                ).fetchall()
 
-            if rows:
-                columns = rows[0].keys()
-                output = io.StringIO()
-                writer = csv.writer(output)
-                writer.writerow(columns)
-                for row in rows:
-                    writer.writerow([row[c] for c in columns])
-                filepath.write_text(output.getvalue())
-                total_rows += len(rows)
-            else:
-                filepath.write_text("")
+                filename = f"behaviors_{export_id}.csv"
+                filepath = EXPORTS_DIR / filename
 
-            files_included.append(filename)
+                if rows:
+                    columns = rows[0].keys()
+                    output = io.StringIO()
+                    writer = csv.writer(output)
+                    writer.writerow(columns)
+                    for row in rows:
+                        writer.writerow([row[c] for c in columns])
+                    filepath.write_text(output.getvalue())
+                    total_rows += len(rows)
+                else:
+                    filepath.write_text("")
 
-        elif table_name == "pairwise":
-            period_sql, params = _period_clause(body.filters.get("period"))
+                files_included.append(filename)
 
-            rows = conn.execute(
-                f"""SELECT p.* FROM pairwise p
-                    JOIN videos v ON p.video_id = v.video_id
-                    WHERE 1=1 {period_sql}
-                    ORDER BY p.video_id, p.frame_idx""",
-                params,
-            ).fetchall()
+            elif table_name == "pairwise":
+                period_sql, params = _period_clause(body.filters.get("period"))
 
-            filename = f"pairwise_{export_id}.csv"
-            filepath = EXPORTS_DIR / filename
+                rows = conn.execute(
+                    f"""SELECT p.* FROM pairwise p
+                        JOIN videos v ON p.video_id = v.video_id
+                        WHERE 1=1 {period_sql}
+                        ORDER BY p.video_id, p.frame_idx""",
+                    params,
+                ).fetchall()
 
-            if rows:
-                columns = rows[0].keys()
-                output = io.StringIO()
-                writer = csv.writer(output)
-                writer.writerow(columns)
-                for row in rows:
-                    writer.writerow([row[c] for c in columns])
-                filepath.write_text(output.getvalue())
-                total_rows += len(rows)
-            else:
-                filepath.write_text("")
+                filename = f"pairwise_{export_id}.csv"
+                filepath = EXPORTS_DIR / filename
 
-            files_included.append(filename)
+                if rows:
+                    columns = rows[0].keys()
+                    output = io.StringIO()
+                    writer = csv.writer(output)
+                    writer.writerow(columns)
+                    for row in rows:
+                        writer.writerow([row[c] for c in columns])
+                    filepath.write_text(output.getvalue())
+                    total_rows += len(rows)
+                else:
+                    filepath.write_text("")
+
+                files_included.append(filename)
 
     if body.include_manifest:
         manifest_name = f"manifest_{export_id}.txt"
@@ -168,8 +168,6 @@ async def create_export(body: ExportRequest):
             f"Total rows: {total_rows}\n"
         )
         files_included.append(manifest_name)
-
-    conn.close()
 
     return {
         "download_url": f"/api/export/download/{files_included[0]}" if files_included else None,

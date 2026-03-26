@@ -74,6 +74,7 @@ function SocialMap({
     pigeon_a: string;
     pigeon_b: string;
     total_duration_seconds: number;
+    avg_distance_mm: number;
   }[];
 }) {
   // Collect unique pigeons
@@ -117,7 +118,11 @@ function SocialMap({
             strokeWidth={w}
             strokeOpacity={0.35}
             strokeLinecap="round"
-          />
+          >
+            <title>
+              {p.pigeon_a} ↔ {p.pigeon_b}: {(p.total_duration_seconds / 60).toFixed(1)} min, {Math.round(p.avg_distance_mm)}mm avg distance
+            </title>
+          </line>
         );
       })}
       {/* Nodes */}
@@ -130,7 +135,9 @@ function SocialMap({
             fill="white"
             stroke="#0D9488"
             strokeWidth={2}
-          />
+          >
+            <title>{id}</title>
+          </circle>
           <text
             x={positions[i]!.x}
             y={positions[i]!.y + 1}
@@ -160,6 +167,10 @@ export default function Insights() {
   const [behaviorPigeonFilter, setBehaviorPigeonFilter] = useState("all");
   const [sessionA, setSessionA] = useState("");
   const [sessionB, setSessionB] = useState("");
+  const [comparePigeonA, setComparePigeonA] = useState("");
+  const [comparePigeonB, setComparePigeonB] = useState("");
+  const [includeRejected, setIncludeRejected] = useState(false);
+  const [includeManifest, setIncludeManifest] = useState(true);
 
   // Fetch registered pigeons for filter buttons
   const pigeonsQuery = useQuery({
@@ -169,14 +180,16 @@ export default function Insights() {
   const pigeonIds = (pigeonsQuery.data ?? []).map((p) => p.pigeon_id);
 
   // Section queries
+  const approvedOnly = !includeRejected;
+
   const heatmapQuery = useQuery({
-    queryKey: ["insights-heatmap", pigeonFilter, period],
-    queryFn: () => getInsightsHeatmap(pigeonFilter, period),
+    queryKey: ["insights-heatmap", pigeonFilter, period, approvedOnly],
+    queryFn: () => getInsightsHeatmap(pigeonFilter, period, approvedOnly),
   });
 
   const behaviorsQuery = useQuery({
-    queryKey: ["insights-behaviors", period],
-    queryFn: () => getInsightsBehaviors(period),
+    queryKey: ["insights-behaviors", period, approvedOnly],
+    queryFn: () => getInsightsBehaviors(period, approvedOnly),
   });
 
   const pairwiseQuery = useQuery({
@@ -203,10 +216,15 @@ export default function Insights() {
   // Export
   const exportMutation = useMutation({
     mutationFn: () =>
-      createExport({ format: "csv", include: ["features", "behaviors", "droppings"] }),
+      createExport({ format: "csv", include: ["features", "behaviors", "droppings"], filters: { period }, include_manifest: includeManifest }),
     onSuccess: (data) => {
       if (data.download_url) {
-        window.open(data.download_url, "_blank");
+        const a = document.createElement("a");
+        a.href = data.download_url;
+        a.download = "";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
       }
     },
   });
@@ -282,6 +300,17 @@ export default function Insights() {
             All Cameras
             <ChevronDown size={14} />
           </button>
+
+          {/* Include rejected toggle */}
+          <label className="flex items-center gap-2 px-3 py-2 bg-surface border border-border rounded-lg text-sm cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={includeRejected}
+              onChange={(e) => setIncludeRejected(e.target.checked)}
+              className="rounded border-border text-accent focus:ring-accent/30"
+            />
+            <span className="text-text-secondary">Include rejected</span>
+          </label>
         </div>
       </div>
 
@@ -447,6 +476,10 @@ export default function Insights() {
               Not yet benchmarked — treat as preliminary
             </span>
           </div>
+
+          <p className="text-[12px] text-text-secondary mb-4">
+            Droppings are not attributed to individual pigeons — this shows all detected droppings.
+          </p>
 
           {droppingsQuery.isError ? (
             <SectionError message="Failed to load droppings data." onRetry={() => droppingsQuery.refetch()} />
@@ -671,10 +704,76 @@ export default function Insights() {
         ) : null}
       </section>
 
-      {/* ===== 6. Export Buttons ===== */}
-      <div className="flex items-center gap-3">
+      {/* ===== 6. Compare Pigeons ===== */}
+      <section className="bg-surface border border-border rounded-xl p-5">
+        <h2 className="text-sm font-semibold text-text-primary mb-4">
+          Compare Pigeons
+        </h2>
+        <div className="flex flex-wrap items-center gap-3 mb-4">
+          <select
+            value={comparePigeonA}
+            onChange={(e) => setComparePigeonA(e.target.value)}
+            className="px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-colors"
+          >
+            <option value="">Pigeon A</option>
+            {pigeonIds.map((id) => (
+              <option key={id} value={id}>
+                {id}
+              </option>
+            ))}
+          </select>
+          <span className="text-sm text-text-secondary">vs</span>
+          <select
+            value={comparePigeonB}
+            onChange={(e) => setComparePigeonB(e.target.value)}
+            className="px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-colors"
+          >
+            <option value="">Pigeon B</option>
+            {pigeonIds.map((id) => (
+              <option key={id} value={id}>
+                {id}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {!comparePigeonA || !comparePigeonB || comparePigeonA === comparePigeonB ? (
+          <SectionEmpty message="Select two different pigeons to compare." />
+        ) : (
+          <div className="grid grid-cols-2 gap-4">
+            <div className="rounded-lg border border-border bg-bg p-4 text-center">
+              <p className="text-sm font-medium text-text-primary mb-1">{comparePigeonA}</p>
+              <p className="text-xs text-text-secondary">Zone preferences, activity levels</p>
+            </div>
+            <div className="rounded-lg border border-border bg-bg p-4 text-center">
+              <p className="text-sm font-medium text-text-primary mb-1">{comparePigeonB}</p>
+              <p className="text-xs text-text-secondary">Zone preferences, activity levels</p>
+            </div>
+            <div className="col-span-2 rounded-lg border border-dashed border-border bg-bg/50 p-6 text-center">
+              <p className="text-sm text-text-secondary">
+                Pigeon comparison coming soon — this will show zone preferences, activity levels, and time spent near each other.
+              </p>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* ===== 7. Export Buttons ===== */}
+      <p className="text-xs text-text-secondary">
+        Export your data for use in R, Python, or other analysis tools.
+      </p>
+      <div className="flex items-center gap-3 flex-wrap">
+        <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={includeManifest}
+            onChange={(e) => setIncludeManifest(e.target.checked)}
+            className="rounded border-border text-accent focus:ring-accent/30"
+          />
+          <span className="text-text-secondary">Include reproducibility manifest</span>
+        </label>
         <button
-          onClick={() => toast.success("PDF export coming soon — this feature is in development")}
+          onClick={() => toast.success("PDF export is planned for a future update. CSV export includes all spatial features, behaviors, and droppings data.")}
           className="flex items-center gap-1.5 px-4 py-2 border border-border rounded-lg text-sm font-medium text-text-primary hover:bg-bg transition-colors"
         >
           <Download size={14} />

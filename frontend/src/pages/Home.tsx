@@ -6,6 +6,7 @@ import { getAttentionItems } from "../api/stats";
 import { getStatsSummary } from "../api/stats";
 import { getActivity } from "../api/stats";
 import LoadingState from "../components/ui/LoadingState";
+import SectionError from "../components/ui/SectionError";
 import { formatRelativeTime } from "../utils/formatTime";
 
 const severityDots: Record<string, string> = {
@@ -25,24 +26,16 @@ export default function Home() {
   const activityQuery = useQuery({ queryKey: ["activity"], queryFn: () => getActivity(10) });
 
   const isLoading = statsQuery.isLoading || attentionQuery.isLoading;
-  const hasError = statsQuery.isError || attentionQuery.isError;
 
   if (isLoading) return <LoadingState />;
-
-  if (hasError) {
-    return (
-      <div className="text-center py-16 text-text-secondary text-sm">
-        Something went wrong loading the dashboard. Please try refreshing the page.
-      </div>
-    );
-  }
 
   const stats = statsQuery.data;
   const attention = attentionQuery.data ?? [];
   const summary = summaryQuery.data;
   const activity = activityQuery.data ?? [];
 
-  const isEmpty = (stats?.videos_processed ?? 0) === 0
+  const isEmpty = !statsQuery.isError
+    && (stats?.videos_processed ?? 0) === 0
     && (stats?.pigeons_tracked ?? 0) === 0
     && attention.length === 0
     && activity.length === 0;
@@ -65,19 +58,22 @@ export default function Home() {
             {
               step: 1,
               title: "Register your pigeons",
+              description: "Register your pigeons so PigeonLab can identify them",
               to: "/pigeons",
             },
             {
               step: 2,
               title: "Add videos for processing",
+              description: "Add videos for processing — PigeonLab will find and track your pigeons",
               to: "/videos",
             },
             {
               step: 3,
               title: "Review and analyze results",
+              description: "Review results, view insights, and export data",
               to: "/insights",
             },
-          ].map(({ step, title, to }) => (
+          ].map(({ step, title, description, to }) => (
             <Link
               key={step}
               to={to}
@@ -88,6 +84,9 @@ export default function Home() {
               </span>
               <p className="text-sm font-medium text-text-primary group-hover:text-accent transition-colors">
                 {title}
+              </p>
+              <p className="text-xs text-text-secondary leading-relaxed">
+                {description}
               </p>
             </Link>
           ))}
@@ -104,19 +103,28 @@ export default function Home() {
       </h1>
 
       {/* Stat cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <StatCard
-          value={stats?.videos_processed ?? 0}
-          label="videos processed today"
-        />
-        <StatCard
-          value={stats?.pigeons_tracked ?? 0}
-          label="pigeons tracked"
-        />
-      </div>
+      {statsQuery.isError ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <StatCard value="—" label="videos processed today" />
+          <StatCard value="—" label="pigeons tracked" />
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <StatCard
+            value={stats?.videos_processed ?? 0}
+            label="videos processed today"
+          />
+          <StatCard
+            value={stats?.pigeons_tracked ?? 0}
+            label="pigeons tracked"
+          />
+        </div>
+      )}
 
       {/* Needs attention */}
-      {attention.length > 0 && (
+      {attentionQuery.isError ? (
+        <SectionError message="Could not load attention items." onRetry={() => attentionQuery.refetch()} />
+      ) : attention.length > 0 ? (
         <section>
           <h2 className="text-sm font-semibold text-text-primary mb-3">
             ⚡ Needs Your Attention
@@ -142,10 +150,12 @@ export default function Home() {
             ))}
           </div>
         </section>
-      )}
+      ) : null}
 
       {/* Quick Stats */}
-      {summary && Object.keys(summary.pigeons).length > 0 && (
+      {summaryQuery.isError ? (
+        <SectionError message="Could not load stats." onRetry={() => summaryQuery.refetch()} />
+      ) : summary && Object.keys(summary.pigeons).length > 0 ? (
         <section>
           <h2 className="text-sm font-semibold text-text-primary mb-3">
             📊 Quick Stats This Week
@@ -182,7 +192,7 @@ export default function Home() {
             })}
           </div>
         </section>
-      )}
+      ) : null}
 
       {/* Recent Activity */}
       {activity.length > 0 && (
@@ -213,7 +223,7 @@ export default function Home() {
   );
 }
 
-function StatCard({ value, label }: { value: number; label: string }) {
+function StatCard({ value, label }: { value: number | string; label: string }) {
   return (
     <div className="bg-surface border border-border rounded-xl p-5 flex items-center gap-4 border-l-[3px] border-l-accent">
       <span className="text-3xl font-bold text-accent tabular-nums">

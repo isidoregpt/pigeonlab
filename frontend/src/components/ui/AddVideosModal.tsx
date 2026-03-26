@@ -19,6 +19,7 @@ export default function AddVideosModal({ onClose, onSuccess }: AddVideosModalPro
   const [cameraAssignments, setCameraAssignments] = useState<Record<string, string>>({});
   const [pigeonCount, setPigeonCount] = useState<number>(1);
   const [textPrompt, setTextPrompt] = useState("pigeon");
+  const [sessionId, setSessionId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -78,6 +79,7 @@ export default function AddVideosModal({ onClose, onSuccess }: AddVideosModalPro
         camera_assignments: Object.keys(cameraMap).length > 0 ? cameraMap : undefined,
         expected_pigeon_count: pigeonCount,
         text_prompt: textPrompt.trim() || "pigeon",
+        session_id: sessionId.trim() || undefined,
       });
       queryClient.invalidateQueries({ queryKey: ["videos"] });
       queryClient.invalidateQueries({ queryKey: ["stats-today"] });
@@ -182,6 +184,8 @@ export default function AddVideosModal({ onClose, onSuccess }: AddVideosModalPro
               setPigeonCount={setPigeonCount}
               textPrompt={textPrompt}
               setTextPrompt={setTextPrompt}
+              sessionId={sessionId}
+              setSessionId={setSessionId}
             />
           )}
 
@@ -362,11 +366,15 @@ function Step3({
   setPigeonCount,
   textPrompt,
   setTextPrompt,
+  sessionId,
+  setSessionId,
 }: {
   pigeonCount: number;
   setPigeonCount: (n: number) => void;
   textPrompt: string;
   setTextPrompt: (s: string) => void;
+  sessionId: string;
+  setSessionId: (s: string) => void;
 }) {
   return (
     <div className="space-y-5">
@@ -400,6 +408,23 @@ function Step3({
         />
         <p className="text-[12px] text-text-secondary mt-1">
           The object label the detection model will search for.
+        </p>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-text-primary mb-1.5">
+          Session ID
+          <span className="text-text-secondary font-normal ml-1">(optional)</span>
+        </label>
+        <input
+          type="text"
+          value={sessionId}
+          onChange={(e) => setSessionId(e.target.value)}
+          placeholder="session_013"
+          className="w-full max-w-xs px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text-primary placeholder:text-text-secondary/40 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-colors"
+        />
+        <p className="text-[12px] text-text-secondary mt-1">
+          Group these videos under a session for easier filtering.
         </p>
       </div>
     </div>

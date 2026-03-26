@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Plus, Search, Loader2 } from "lucide-react";
 import { usePageTitle } from "../hooks/usePageTitle";
+import { useDebounce } from "../hooks/useDebounce";
 import { getVideos } from "../api/videos";
 import type { Video } from "../types";
 import VideoCard from "../components/ui/VideoCard";
@@ -49,7 +50,7 @@ export default function Videos() {
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
 
-  const { data, isLoading, isError, refetch } = useQuery({
+  const { data, isLoading, isFetching, isError, refetch } = useQuery({
     queryKey: ["videos", page],
     queryFn: () => getVideos("date", page, PER_PAGE),
     refetchInterval: 10_000,
@@ -59,15 +60,17 @@ export default function Videos() {
   const total = data?.total ?? 0;
   const totalPages = Math.ceil(total / PER_PAGE);
 
+  const debouncedSearch = useDebounce(search, 200);
+
   const filtered = useMemo(() => {
-    if (!search.trim()) return videos;
-    const q = search.toLowerCase();
+    if (!debouncedSearch.trim()) return videos;
+    const q = debouncedSearch.toLowerCase();
     return videos.filter(
       (v) =>
         v.video_name.toLowerCase().includes(q) ||
         (v.session_id?.toLowerCase().includes(q) ?? false),
     );
-  }, [videos, search]);
+  }, [videos, debouncedSearch]);
 
   const groups = useMemo(() => groupByDate(filtered), [filtered]);
 
@@ -75,8 +78,14 @@ export default function Videos() {
 
   if (isError) {
     return (
-      <div className="text-center py-16 text-text-secondary text-sm">
-        Something went wrong loading videos. Please try refreshing the page.
+      <div className="text-center py-16 space-y-3">
+        <p className="text-sm text-text-secondary">Something went wrong loading videos.</p>
+        <button
+          onClick={() => refetch()}
+          className="text-sm font-medium text-accent hover:text-accent/80 transition-colors"
+        >
+          Try Again
+        </button>
       </div>
     );
   }
@@ -85,7 +94,12 @@ export default function Videos() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-text-primary">📹 Videos</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-xl font-bold text-text-primary">📹 Videos</h1>
+          {isFetching && !isLoading && (
+            <Loader2 size={14} className="animate-spin text-text-secondary" />
+          )}
+        </div>
         <button
           onClick={() => setModalOpen(true)}
           className="flex items-center gap-1.5 px-4 py-2 bg-accent text-white text-sm font-medium rounded-lg hover:bg-accent/90 transition-colors"
