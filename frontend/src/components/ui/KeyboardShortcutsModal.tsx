@@ -85,6 +85,7 @@ export default function KeyboardShortcutsModal({
           </h2>
           <button
             onClick={onClose}
+            aria-label="Close"
             className="p-1 rounded-lg text-text-secondary hover:text-text-primary hover:bg-bg transition-colors"
           >
             <X size={18} />

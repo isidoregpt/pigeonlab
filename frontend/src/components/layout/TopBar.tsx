@@ -42,6 +42,7 @@ export default function TopBar({ title, onShowShortcuts }: TopBarProps) {
       </button>
       <button
         onClick={() => navigate("/review")}
+        aria-label="Notifications"
         className="relative flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors hover:bg-bg"
       >
         <Bell size={18} className={attentionCount > 0 ? "text-warning" : "text-text-secondary"} strokeWidth={1.8} />
