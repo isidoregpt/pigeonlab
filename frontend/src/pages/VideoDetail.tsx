@@ -13,6 +13,8 @@ import {
   AlertTriangle,
   Check,
   Loader2,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import {
   getVideo,
@@ -35,6 +37,7 @@ export default function VideoDetail() {
 
   const [frameNum, setFrameNum] = useState(0);
   const [frameLoading, setFrameLoading] = useState(true);
+  const [showOverlays, setShowOverlays] = useState(true);
 
   // --- Queries ---
 
@@ -176,6 +179,15 @@ export default function VideoDetail() {
         <div className="flex-1 min-w-0 space-y-4">
           {/* Frame viewer */}
           <div className="bg-surface border border-border rounded-xl overflow-hidden">
+            <div className="flex items-center justify-end px-3 py-2 border-b border-border">
+              <button
+                onClick={() => setShowOverlays((v) => !v)}
+                className="flex items-center gap-1.5 text-xs text-text-secondary hover:text-text-primary transition-colors"
+              >
+                {showOverlays ? <Eye size={14} /> : <EyeOff size={14} />}
+                {showOverlays ? "Hide Overlays" : "Show Overlays"}
+              </button>
+            </div>
             <div className="relative bg-black aspect-video flex items-center justify-center">
               {frameLoading && (
                 <div className="absolute inset-0 flex items-center justify-center z-10">
@@ -184,7 +196,7 @@ export default function VideoDetail() {
               )}
               {totalFrames > 0 ? (
                 <img
-                  src={getFrameUrl(videoId, frameNum, true)}
+                  src={getFrameUrl(videoId, frameNum, showOverlays)}
                   alt={`Frame ${frameNum}`}
                   className={`max-w-full max-h-full object-contain transition-opacity ${frameLoading ? "opacity-30" : "opacity-100"}`}
                   onLoad={() => setFrameLoading(false)}
