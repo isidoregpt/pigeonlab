@@ -411,6 +411,14 @@ export default function VideoDetail() {
               {video.session_id && (
                 <MetaRow label="Session" value={video.session_id} />
               )}
+              <MetaRow
+                label="Processed"
+                value={video.processed_at ? new Date(video.processed_at).toLocaleDateString() : "Not yet"}
+              />
+              <MetaRow
+                label="Model"
+                value={video.model_version ?? "—"}
+              />
             </div>
 
             {/* Status badges */}
