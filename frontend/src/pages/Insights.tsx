@@ -210,7 +210,7 @@ export default function Insights() {
   // Export
   const exportMutation = useMutation({
     mutationFn: () =>
-      createExport({ format: "csv", include: ["features", "behaviors", "droppings"] }),
+      createExport({ format: "csv", include: ["features", "behaviors", "droppings"], filters: { period } }),
     onSuccess: (data) => {
       if (data.download_url) {
         const a = document.createElement("a");
