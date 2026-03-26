@@ -206,7 +206,12 @@ export default function Insights() {
       createExport({ format: "csv", include: ["features", "behaviors", "droppings"] }),
     onSuccess: (data) => {
       if (data.download_url) {
-        window.open(data.download_url, "_blank");
+        const a = document.createElement("a");
+        a.href = data.download_url;
+        a.download = "";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
       }
     },
   });
