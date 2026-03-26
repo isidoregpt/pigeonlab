@@ -73,10 +73,10 @@ def init_db():
             confidence REAL,
             match_method TEXT,
             review_status TEXT DEFAULT 'raw',
-            assigned_at TEXT,
+            assigned_at TEXT DEFAULT (datetime('now')),
             reviewed_at TEXT,
             reviewed_by TEXT,
-            created_at TEXT
+            created_at TEXT DEFAULT (datetime('now'))
         );
 
         CREATE TABLE IF NOT EXISTS identity_reviews (
@@ -172,7 +172,7 @@ def init_db():
             velocity_context TEXT,
             pairwise_context TEXT,
             extraction_reason TEXT,
-            created_at TEXT
+            created_at TEXT DEFAULT (datetime('now'))
         );
 
         CREATE TABLE IF NOT EXISTS model_registry (
@@ -186,7 +186,7 @@ def init_db():
             train_accuracy REAL,
             val_accuracy REAL,
             test_accuracy REAL,
-            created_at TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
             notes TEXT,
             is_active BOOLEAN DEFAULT 0
         );
@@ -222,7 +222,7 @@ def init_db():
             reason TEXT,
             review_status TEXT DEFAULT 'pending',
             resolved_action TEXT,
-            created_at TEXT
+            created_at TEXT DEFAULT (datetime('now'))
         );
 
         CREATE TABLE IF NOT EXISTS review_tasks (
@@ -233,7 +233,7 @@ def init_db():
             priority TEXT DEFAULT 'normal',
             status TEXT DEFAULT 'pending',
             assigned_to TEXT,
-            created_at TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
             completed_at TEXT
         );
 
@@ -245,7 +245,7 @@ def init_db():
             metric_name TEXT NOT NULL,
             metric_value REAL,
             sample_size INTEGER,
-            run_at TEXT,
+            run_at TEXT DEFAULT (datetime('now')),
             config_used TEXT
         );
 
