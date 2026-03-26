@@ -326,7 +326,7 @@ export default function VideoDetail() {
                     <div
                       key={f.id}
                       onClick={() => navigate(`/pigeons/${f.pigeon_id}`)}
-                      className="relative bg-surface border border-border rounded-xl px-4 py-3 flex items-center gap-3 cursor-pointer hover:border-accent hover:shadow-md transition-all overflow-hidden"
+                      className="relative bg-surface border-2 border-border rounded-xl px-4 py-3 flex items-center gap-3 cursor-pointer hover:border-accent hover:bg-accent/[0.03] hover:shadow-md transition-all overflow-hidden"
                     >
                       {/* Confidence bar */}
                       <div
