@@ -361,14 +361,27 @@ function QCReview({ videoId }: { videoId?: number }) {
         resolved_action: "accepted",
         reviewer: "lab_user",
       }),
+    onMutate: async (flagId) => {
+      await queryClient.cancelQueries({ queryKey: ["qc-flags", videoId] });
+      const previous = queryClient.getQueryData<QCFlag[]>(["qc-flags", videoId]);
+      queryClient.setQueryData<QCFlag[]>(["qc-flags", videoId], (old) =>
+        old ? old.filter((f) => f.id !== flagId) : [],
+      );
+      return { previous };
+    },
     onSuccess: () => {
       toast.success("QC flag resolved");
-      queryClient.invalidateQueries({ queryKey: ["qc-flags", videoId] });
       queryClient.invalidateQueries({ queryKey: ["attention-count"] });
       queryClient.invalidateQueries({ queryKey: ["attention-items"] });
     },
-    onError: () => {
+    onError: (_err, _flagId, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(["qc-flags", videoId], context.previous);
+      }
       toast.error("Failed to resolve QC flag");
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["qc-flags", videoId] });
     },
   });
 
@@ -380,14 +393,28 @@ function QCReview({ videoId }: { videoId?: number }) {
         resolved_action: "accepted",
         reviewer: "lab_user",
       }),
+    onMutate: async (flagIds) => {
+      await queryClient.cancelQueries({ queryKey: ["qc-flags", videoId] });
+      const previous = queryClient.getQueryData<QCFlag[]>(["qc-flags", videoId]);
+      const idSet = new Set(flagIds);
+      queryClient.setQueryData<QCFlag[]>(["qc-flags", videoId], (old) =>
+        old ? old.filter((f) => !idSet.has(f.id)) : [],
+      );
+      return { previous };
+    },
     onSuccess: () => {
       toast.success("All low-severity flags resolved");
-      queryClient.invalidateQueries({ queryKey: ["qc-flags", videoId] });
       queryClient.invalidateQueries({ queryKey: ["attention-count"] });
       queryClient.invalidateQueries({ queryKey: ["attention-items"] });
     },
-    onError: () => {
+    onError: (_err, _flagIds, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(["qc-flags", videoId], context.previous);
+      }
       toast.error("Failed to batch resolve flags");
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["qc-flags", videoId] });
     },
   });
 
