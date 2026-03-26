@@ -298,6 +298,62 @@ async def review_identity(body: IdentityReviewRequest):
     return dict(updated)
 
 
+# --- Batch identity confirmation ---
+
+
+class BatchIdentityItem(BaseModel):
+    assignment_id: int
+    pigeon_id: str
+
+
+class BatchIdentityRequest(BaseModel):
+    assignments: list[BatchIdentityItem]
+    reviewer: str = Field(default_factory=get_default_reviewer)
+
+
+@router.post("/identities/batch")
+async def batch_confirm_identities(body: BatchIdentityRequest):
+    """Confirm multiple identity assignments in one request."""
+    if not body.assignments:
+        raise HTTPException(status_code=400, detail="assignments list must not be empty.")
+
+    confirmed = 0
+    with get_db() as conn:
+        for item in body.assignments:
+            row = conn.execute(
+                "SELECT * FROM video_assignments WHERE id = ?", (item.assignment_id,)
+            ).fetchone()
+            if not row:
+                continue
+
+            old_pigeon = row["pigeon_id"]
+
+            if item.pigeon_id != old_pigeon:
+                conn.execute(
+                    """UPDATE video_assignments SET pigeon_id = ?, review_status = 'approved',
+                       reviewed_at = datetime('now'), reviewed_by = ? WHERE id = ?""",
+                    (item.pigeon_id, body.reviewer, item.assignment_id),
+                )
+            else:
+                conn.execute(
+                    """UPDATE video_assignments SET review_status = 'approved',
+                       reviewed_at = datetime('now'), reviewed_by = ? WHERE id = ?""",
+                    (body.reviewer, item.assignment_id),
+                )
+
+            conn.execute(
+                """INSERT INTO identity_reviews
+                   (assignment_id, action, old_pigeon_id, new_pigeon_id, reviewer, reviewed_at)
+                   VALUES (?, 'confirm', ?, ?, ?, datetime('now'))""",
+                (item.assignment_id, old_pigeon, item.pigeon_id, body.reviewer),
+            )
+            confirmed += 1
+
+        conn.commit()
+
+    return {"confirmed": confirmed}
+
+
 # --- QC flags ---
 
 @router.get("/qc-flags")
