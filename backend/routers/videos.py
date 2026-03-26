@@ -124,6 +124,9 @@ async def process_videos(req: ProcessRequest):
         for path in req.video_paths:
             name = Path(path).name
             camera = req.camera_assignments.get(path, "")
+            # NOTE: processed_at is left NULL here. The future processing
+            # worker should set processed_at = datetime('now') when it
+            # transitions processing_status to 'completed'.
             conn.execute(
                 """INSERT INTO videos (video_name, session_id, camera_type, processing_status)
                    VALUES (?, ?, ?, 'queued')""",
