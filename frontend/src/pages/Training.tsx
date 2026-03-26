@@ -499,6 +499,9 @@ function TrainModelTab() {
     epochs: epochs < 1 || epochs > 500 ? "Must be 1–500." : null,
     batchSize: batchSize < 1 || batchSize > 256 ? "Must be 1–256." : null,
     lr: lr < 0.00001 || lr > 1 ? "Must be 0.00001–1.0." : null,
+    classes: selectedClasses.size > 0 && selectedClasses.size < 2
+      ? "Select at least 2 behavior classes to train a classifier."
+      : null,
   };
   const hasConfigError = Object.values(configErrors).some(Boolean);
 
@@ -713,13 +716,16 @@ function TrainModelTab() {
             </label>
           ))}
         </div>
+        {configErrors.classes && (
+          <p className="text-[12px] text-error mt-2">{configErrors.classes}</p>
+        )}
       </section>
 
       {/* Launch */}
       <div className="space-y-3">
         <button
           onClick={launch}
-          disabled={trainMutation.isPending || selectedClasses.size === 0 || hasConfigError}
+          disabled={trainMutation.isPending || selectedClasses.size < 2 || hasConfigError}
           className="flex items-center gap-2 px-5 py-2.5 bg-accent text-white text-sm font-medium rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {trainMutation.isPending ? (
