@@ -681,9 +681,12 @@ export default function Insights() {
       </section>
 
       {/* ===== 6. Export Buttons ===== */}
+      <p className="text-xs text-text-secondary">
+        Export your data for use in R, Python, or other analysis tools.
+      </p>
       <div className="flex items-center gap-3">
         <button
-          onClick={() => toast.success("PDF export coming soon — this feature is in development")}
+          onClick={() => toast.success("PDF export is planned for a future update. CSV export includes all spatial features, behaviors, and droppings data.")}
           className="flex items-center gap-1.5 px-4 py-2 border border-border rounded-lg text-sm font-medium text-text-primary hover:bg-bg transition-colors"
         >
           <Download size={14} />
