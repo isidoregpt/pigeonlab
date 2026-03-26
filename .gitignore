@@ -48,5 +48,8 @@ $RECYCLE.BIN/
 .env.local
 .env.*.local
 
+# Data
+data/
+
 # OS
 .DS_Store
