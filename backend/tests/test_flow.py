@@ -12,7 +12,7 @@ from pathlib import Path
 # Ensure backend modules are importable
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from database import init_db, DB_PATH  # noqa: E402
+from database import init_db  # noqa: E402
 import seed_data  # noqa: E402
 
 import httpx  # noqa: E402
@@ -45,7 +45,7 @@ async def run():
     try:
         seed_data.seed()
         check("seed_data", True)
-    except Exception as e:
+    except Exception:
         # Seed may already exist — that's fine
         check("seed_data", True, "already seeded or completed")
 
@@ -68,7 +68,8 @@ async def run():
         # (c) GET /api/review/identities/next-video
         r = await c.get("/api/review/identities/next-video")
         video_id = r.json().get("video_id") if r.status_code == 200 else None
-        check("GET /api/review/identities/next-video", r.status_code == 200 and video_id is not None, f"video_id={video_id}")
+        ok = r.status_code == 200 and video_id is not None
+        check("GET /api/review/identities/next-video", ok, f"video_id={video_id}")
 
         # (d) GET /api/review/identities?video_id={id}
         r = await c.get(f"/api/review/identities?video_id={video_id}")
@@ -97,7 +98,8 @@ async def run():
         # (g) GET /api/insights/heatmap
         r = await c.get("/api/insights/heatmap?pigeons=all&period=all&approved_only=false")
         grid = r.json().get("grid") if r.status_code == 200 else None
-        check("GET /api/insights/heatmap", r.status_code == 200 and grid is not None, f"grid={'present' if grid else 'missing'}")
+        grid_status = "present" if grid else "missing"
+        check("GET /api/insights/heatmap", r.status_code == 200 and grid is not None, f"grid={grid_status}")
 
         # (h) POST /api/export
         r = await c.post("/api/export/", json={
@@ -108,12 +110,14 @@ async def run():
         })
         download_url = r.json().get("download_url") if r.status_code == 200 else None
         rows = r.json().get("rows_exported", 0) if r.status_code == 200 else 0
-        check("POST /api/export", r.status_code == 200 and download_url is not None, f"rows={rows}")
+        ok = r.status_code == 200 and download_url is not None
+        check("POST /api/export", ok, f"rows={rows}")
 
         # (i) GET /api/export/download/{filename}
         if download_url:
             r = await c.get(download_url)
-            check("GET /api/export/download", r.status_code == 200 and len(r.content) > 0, f"size={len(r.content)} bytes")
+            ok = r.status_code == 200 and len(r.content) > 0
+            check("GET /api/export/download", ok, f"size={len(r.content)} bytes")
         else:
             check("GET /api/export/download", False, "no download_url from export")
 
