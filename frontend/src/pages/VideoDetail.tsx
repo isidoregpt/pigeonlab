@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { usePageTitle } from "../hooks/usePageTitle";
 import {
@@ -29,6 +29,7 @@ export default function VideoDetail() {
   usePageTitle("Video Detail");
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const videoId = Number(id);
 
@@ -44,6 +45,17 @@ export default function VideoDetail() {
   });
 
   const totalFrames = videoQuery.data?.total_frames ?? 0;
+
+  // Jump to ?frame=N on mount once totalFrames is known
+  useEffect(() => {
+    const frameParam = searchParams.get("frame");
+    if (frameParam !== null && totalFrames > 0) {
+      const parsed = Number(frameParam);
+      if (!Number.isNaN(parsed)) {
+        setFrameNum(Math.max(0, Math.min(parsed, totalFrames - 1)));
+      }
+    }
+  }, [totalFrames, searchParams]);
 
   const featuresQuery = useQuery({
     queryKey: ["video-features", videoId, frameNum],
