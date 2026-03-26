@@ -167,6 +167,8 @@ export default function Insights() {
   const [behaviorPigeonFilter, setBehaviorPigeonFilter] = useState("all");
   const [sessionA, setSessionA] = useState("");
   const [sessionB, setSessionB] = useState("");
+  const [comparePigeonA, setComparePigeonA] = useState("");
+  const [comparePigeonB, setComparePigeonB] = useState("");
 
   // Fetch registered pigeons for filter buttons
   const pigeonsQuery = useQuery({
@@ -687,7 +689,61 @@ export default function Insights() {
         ) : null}
       </section>
 
-      {/* ===== 6. Export Buttons ===== */}
+      {/* ===== 6. Compare Pigeons ===== */}
+      <section className="bg-surface border border-border rounded-xl p-5">
+        <h2 className="text-sm font-semibold text-text-primary mb-4">
+          Compare Pigeons
+        </h2>
+        <div className="flex flex-wrap items-center gap-3 mb-4">
+          <select
+            value={comparePigeonA}
+            onChange={(e) => setComparePigeonA(e.target.value)}
+            className="px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-colors"
+          >
+            <option value="">Pigeon A</option>
+            {pigeonIds.map((id) => (
+              <option key={id} value={id}>
+                {id}
+              </option>
+            ))}
+          </select>
+          <span className="text-sm text-text-secondary">vs</span>
+          <select
+            value={comparePigeonB}
+            onChange={(e) => setComparePigeonB(e.target.value)}
+            className="px-3 py-2 bg-bg border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-colors"
+          >
+            <option value="">Pigeon B</option>
+            {pigeonIds.map((id) => (
+              <option key={id} value={id}>
+                {id}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {!comparePigeonA || !comparePigeonB || comparePigeonA === comparePigeonB ? (
+          <SectionEmpty message="Select two different pigeons to compare." />
+        ) : (
+          <div className="grid grid-cols-2 gap-4">
+            <div className="rounded-lg border border-border bg-bg p-4 text-center">
+              <p className="text-sm font-medium text-text-primary mb-1">{comparePigeonA}</p>
+              <p className="text-xs text-text-secondary">Zone preferences, activity levels</p>
+            </div>
+            <div className="rounded-lg border border-border bg-bg p-4 text-center">
+              <p className="text-sm font-medium text-text-primary mb-1">{comparePigeonB}</p>
+              <p className="text-xs text-text-secondary">Zone preferences, activity levels</p>
+            </div>
+            <div className="col-span-2 rounded-lg border border-dashed border-border bg-bg/50 p-6 text-center">
+              <p className="text-sm text-text-secondary">
+                Pigeon comparison coming soon — this will show zone preferences, activity levels, and time spent near each other.
+              </p>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* ===== 7. Export Buttons ===== */}
       <p className="text-xs text-text-secondary">
         Export your data for use in R, Python, or other analysis tools.
       </p>
