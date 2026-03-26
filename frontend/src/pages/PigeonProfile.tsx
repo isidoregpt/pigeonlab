@@ -64,6 +64,7 @@ export default function PigeonProfile() {
   const [editMarkers, setEditMarkers] = useState("");
   const [editNotes, setEditNotes] = useState("");
   const [heatmapPeriod, setHeatmapPeriod] = useState<"day" | "week" | "month">("week");
+  const [behaviorPeriod, setBehaviorPeriod] = useState<"day" | "week" | "month">("week");
 
   // Fetch all three in parallel
   const profileQuery = useQuery({
@@ -73,8 +74,8 @@ export default function PigeonProfile() {
   });
 
   const behaviorsQuery = useQuery({
-    queryKey: ["pigeon-behaviors", pigeonId],
-    queryFn: () => getPigeonBehaviors(pigeonId, "week"),
+    queryKey: ["pigeon-behaviors", pigeonId, behaviorPeriod],
+    queryFn: () => getPigeonBehaviors(pigeonId, behaviorPeriod),
     enabled: pigeonId.length > 0,
   });
 
@@ -392,9 +393,26 @@ export default function PigeonProfile() {
         <SectionSkeleton rows={4} />
       ) : behaviorData.length > 0 ? (
         <div className="bg-surface border border-border rounded-xl p-5">
-          <h2 className="text-sm font-semibold text-text-primary mb-4">
-            What {pigeon?.pigeon_id} Does
-          </h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-semibold text-text-primary">
+              What {pigeon?.pigeon_id} Does
+            </h2>
+            <div className="flex items-center gap-1">
+              {(["day", "week", "month"] as const).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setBehaviorPeriod(p)}
+                  className={`px-2.5 py-1 text-[11px] font-medium rounded-lg transition-colors ${
+                    behaviorPeriod === p
+                      ? "bg-accent text-white"
+                      : "text-text-secondary hover:text-text-primary hover:bg-bg"
+                  }`}
+                >
+                  {p === "day" ? "Day" : p === "week" ? "Week" : "Month"}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="h-48">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
