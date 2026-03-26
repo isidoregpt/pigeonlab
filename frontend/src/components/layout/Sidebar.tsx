@@ -5,6 +5,7 @@ import {
   Video,
   Bird,
   BarChart3,
+  ClipboardCheck,
   FlaskConical,
   Settings,
 } from "lucide-react";
@@ -15,6 +16,7 @@ const mainLinks = [
   { to: "/videos", label: "Videos", icon: Video },
   { to: "/pigeons", label: "Pigeons", icon: Bird },
   { to: "/insights", label: "Insights", icon: BarChart3 },
+  { to: "/review", label: "Review", icon: ClipboardCheck },
 ];
 
 const secondaryLinks = [
@@ -94,7 +96,7 @@ export default function Sidebar() {
             key={link.to}
             {...link}
             end={link.to === "/"}
-            showDot={link.to === "/" && hasAttention}
+            showDot={(link.to === "/" || link.to === "/review") && hasAttention}
           />
         ))}
       </nav>
