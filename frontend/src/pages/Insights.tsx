@@ -170,6 +170,7 @@ export default function Insights() {
   const [comparePigeonA, setComparePigeonA] = useState("");
   const [comparePigeonB, setComparePigeonB] = useState("");
   const [includeRejected, setIncludeRejected] = useState(false);
+  const [includeManifest, setIncludeManifest] = useState(true);
 
   // Fetch registered pigeons for filter buttons
   const pigeonsQuery = useQuery({
@@ -215,7 +216,7 @@ export default function Insights() {
   // Export
   const exportMutation = useMutation({
     mutationFn: () =>
-      createExport({ format: "csv", include: ["features", "behaviors", "droppings"], filters: { period } }),
+      createExport({ format: "csv", include: ["features", "behaviors", "droppings"], filters: { period }, include_manifest: includeManifest }),
     onSuccess: (data) => {
       if (data.download_url) {
         const a = document.createElement("a");
@@ -761,7 +762,16 @@ export default function Insights() {
       <p className="text-xs text-text-secondary">
         Export your data for use in R, Python, or other analysis tools.
       </p>
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
+        <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={includeManifest}
+            onChange={(e) => setIncludeManifest(e.target.checked)}
+            className="rounded border-border text-accent focus:ring-accent/30"
+          />
+          <span className="text-text-secondary">Include reproducibility manifest</span>
+        </label>
         <button
           onClick={() => toast.success("PDF export is planned for a future update. CSV export includes all spatial features, behaviors, and droppings data.")}
           className="flex items-center gap-1.5 px-4 py-2 border border-border rounded-lg text-sm font-medium text-text-primary hover:bg-bg transition-colors"
