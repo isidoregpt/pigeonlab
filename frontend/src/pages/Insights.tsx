@@ -74,6 +74,7 @@ function SocialMap({
     pigeon_a: string;
     pigeon_b: string;
     total_duration_seconds: number;
+    avg_distance_mm: number;
   }[];
 }) {
   // Collect unique pigeons
@@ -117,7 +118,11 @@ function SocialMap({
             strokeWidth={w}
             strokeOpacity={0.35}
             strokeLinecap="round"
-          />
+          >
+            <title>
+              {p.pigeon_a} ↔ {p.pigeon_b}: {(p.total_duration_seconds / 60).toFixed(1)} min, {Math.round(p.avg_distance_mm)}mm avg distance
+            </title>
+          </line>
         );
       })}
       {/* Nodes */}
@@ -130,7 +135,9 @@ function SocialMap({
             fill="white"
             stroke="#0D9488"
             strokeWidth={2}
-          />
+          >
+            <title>{id}</title>
+          </circle>
           <text
             x={positions[i]!.x}
             y={positions[i]!.y + 1}
