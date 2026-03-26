@@ -50,7 +50,7 @@ export default function Videos() {
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
 
-  const { data, isLoading, isError, refetch } = useQuery({
+  const { data, isLoading, isFetching, isError, refetch } = useQuery({
     queryKey: ["videos", page],
     queryFn: () => getVideos("date", page, PER_PAGE),
     refetchInterval: 10_000,
@@ -94,7 +94,12 @@ export default function Videos() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-text-primary">📹 Videos</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-xl font-bold text-text-primary">📹 Videos</h1>
+          {isFetching && !isLoading && (
+            <Loader2 size={14} className="animate-spin text-text-secondary" />
+          )}
+        </div>
         <button
           onClick={() => setModalOpen(true)}
           className="flex items-center gap-1.5 px-4 py-2 bg-accent text-white text-sm font-medium rounded-lg hover:bg-accent/90 transition-colors"
