@@ -1,6 +1,2 @@
-"""ML model wrappers for PigeonLab.
-
-This package holds wrapper classes for machine learning models used in the
-PigeonLab processing pipeline, including segmentation (SAM3), identity
-matching, and behavior classification models.
-"""
+"""ML model wrappers for PigeonLab. Currently wraps SAM 3 for pigeon
+detection and segmentation."""

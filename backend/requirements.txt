@@ -2,7 +2,7 @@ fastapi
 uvicorn[standard]
 python-multipart
 aiofiles
-aiosqlite
+aiosqlite>=0.19.0
 pillow
 numpy
 opencv-python>=4.8.0
@@ -11,3 +11,14 @@ torchvision
 supervision>=0.18.0
 huggingface_hub>=0.20.0
 einops>=0.7.0
+
+# SAM 3 must be installed separately after the above. Run:
+# git clone https://github.com/facebookresearch/sam3.git
+# cd sam3
+# pip install -e .
+# cd ..
+#
+# Then request checkpoint access at:
+# https://huggingface.co/facebook/sam3
+# Then run: hf auth login
+# Then run: python backend/scripts/download_sam3.py

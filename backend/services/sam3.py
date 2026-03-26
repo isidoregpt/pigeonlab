@@ -1,8 +1,8 @@
-"""SAM3 (SAM2) model wrapper for pigeon segmentation.
+"""SAM 3 model wrapper for pigeon detection and segmentation.
 
-Provides a singleton-based interface to the Segment Anything Model for
-detecting and segmenting pigeons in video frames. Uses text-prompted
-segmentation to produce per-pigeon masks and bounding boxes.
+Wraps both the SAM 3 image API (per-frame mask prediction) and the
+video API (full video session tracking with temporal consistency).
+Provides a module-level singleton via :func:`get_sam3`.
 """
 
 import logging
@@ -10,55 +10,80 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from PIL import Image
+
+# ---------------------------------------------------------------------------
+# SAM 3 imports — optional dependency
+# ---------------------------------------------------------------------------
+SAM3_AVAILABLE = True
 
 try:
-    from sam2.build_sam import build_sam2  # type: ignore[import-untyped]
-    from sam2.sam2_image_predictor import SAM2ImagePredictor  # type: ignore[import-untyped]
-
-    SAM2_AVAILABLE = True
+    from sam3.model_builder import build_sam3_image_model  # type: ignore[import-untyped]
 except ImportError:
-    SAM2_AVAILABLE = False
+    build_sam3_image_model = None  # type: ignore[assignment,misc]
+    SAM3_AVAILABLE = False
+
+try:
+    from sam3.model.sam3_image_processor import Sam3Processor  # type: ignore[import-untyped]
+except ImportError:
+    Sam3Processor = None  # type: ignore[assignment,misc]
+    SAM3_AVAILABLE = False
+
+try:
+    from sam3.model_builder import build_sam3_video_predictor  # type: ignore[import-untyped]
+except ImportError:
+    build_sam3_video_predictor = None  # type: ignore[assignment,misc]
+    SAM3_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
 # Default checkpoint path relative to the project root
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_CHECKPOINT = str(
-    _PROJECT_ROOT / "data" / "models" / "sam3" / "sam2.1_hiera_large.pt"
+    _PROJECT_ROOT / "data" / "models" / "sam3" / "sam3_hiera_large.pt"
 )
-DEFAULT_MODEL_CFG = "sam2.1_hiera_l.yaml"
 
 
 class SAM3Wrapper:
-    """Wrapper around Meta's SAM2 model for pigeon detection and segmentation.
+    """Wrapper around Meta's SAM 3 for pigeon detection and segmentation.
+
+    Exposes both the image API (single-frame masks) and the video API
+    (session-based tracking across frames).
 
     Usage::
 
-        wrapper = SAM3Wrapper(checkpoint_path="path/to/sam2.pt")
+        wrapper = SAM3Wrapper()
         wrapper.load()
-        detections = wrapper.predict_masks(frame, text_prompt="pigeon")
+        detections = wrapper.predict_frame(frame_bgr, "pigeon")
     """
 
-    def __init__(self, checkpoint_path: str, device: str = "cuda") -> None:
-        """Initialise the wrapper with a checkpoint path and target device.
+    def __init__(
+        self,
+        checkpoint_path: str | None = None,
+        device: str = "cuda",
+    ) -> None:
+        """Initialise the wrapper.
 
         Args:
-            checkpoint_path: Absolute or relative path to the SAM2 model
-                checkpoint file (.pt).
-            device: PyTorch device string. Falls back to ``"cpu"`` when CUDA
-                is requested but unavailable.
+            checkpoint_path: Path to the SAM 3 checkpoint. ``None`` lets
+                SAM 3 load from HuggingFace directly.
+            device: PyTorch device string. Falls back to ``"cpu"`` when
+                CUDA is requested but unavailable.
         """
         self._checkpoint_path = checkpoint_path
-        self._predictor: "SAM2ImagePredictor | None" = None
 
         if device == "cuda" and not torch.cuda.is_available():
             logger.warning(
-                "CUDA requested but not available — falling back to CPU. "
+                "CUDA requested but unavailable — falling back to CPU. "
                 "Inference will be significantly slower."
             )
             self._device = "cpu"
         else:
             self._device = device
+
+        self._image_model = None
+        self._video_predictor = None
+        self._loaded = False
 
     # ------------------------------------------------------------------
     # Properties
@@ -67,7 +92,7 @@ class SAM3Wrapper:
     @property
     def is_loaded(self) -> bool:
         """Return ``True`` if the model has been loaded into memory."""
-        return self._predictor is not None
+        return self._loaded
 
     @property
     def device(self) -> str:
@@ -79,107 +104,85 @@ class SAM3Wrapper:
     # ------------------------------------------------------------------
 
     def load(self) -> None:
-        """Load the SAM2 model from the configured checkpoint.
+        """Load SAM 3 image and video models.
 
         Raises:
-            ImportError: If the ``sam2`` package is not installed.
-            FileNotFoundError: If the checkpoint file does not exist.
+            ImportError: If the ``sam3`` package is not installed.
         """
-        if not SAM2_AVAILABLE:
+        if not SAM3_AVAILABLE:
             raise ImportError(
-                "The sam2 package is not installed. Install it with:\n"
-                "  pip install git+https://github.com/facebookresearch/sam2.git\n"
+                "The sam3 package is not installed. Install it with:\n"
+                "  git clone https://github.com/facebookresearch/sam3.git\n"
+                "  cd sam3 && pip install -e . && cd ..\n"
                 "Then retry loading the model."
             )
 
-        ckpt = Path(self._checkpoint_path)
-        if not ckpt.is_file():
-            raise FileNotFoundError(
-                f"SAM2 checkpoint not found at {ckpt}.\n"
-                "Download it by running:\n"
-                "  python backend/scripts/download_sam3.py"
-            )
+        logger.info("Loading SAM 3 image model on device=%s …", self._device)
+        self._image_model = build_sam3_image_model()
+        self._image_model.to(self._device)
 
-        logger.info("Loading SAM2 model from %s on device=%s …", ckpt, self._device)
+        logger.info("Loading SAM 3 video predictor on device=%s …", self._device)
+        self._video_predictor = build_sam3_video_predictor()
+        self._video_predictor.to(self._device)
 
-        sam2_model = build_sam2(
-            DEFAULT_MODEL_CFG,
-            str(ckpt),
-            device=self._device,
-        )
-        self._predictor = SAM2ImagePredictor(sam2_model)
-
-        logger.info("SAM2 model loaded successfully.")
+        self._loaded = True
+        logger.info("SAM 3 loaded on %s", self._device)
 
     # ------------------------------------------------------------------
-    # Inference
+    # Image API — single-frame prediction
     # ------------------------------------------------------------------
 
-    def predict_masks(
+    def predict_frame(
         self,
-        frame: np.ndarray,
+        frame_bgr: np.ndarray,
         text_prompt: str,
     ) -> list[dict]:
         """Run segmentation on a single BGR image frame.
 
         Args:
-            frame: A NumPy array of shape ``(H, W, 3)`` in BGR colour order
-                (as returned by ``cv2.imread``).
-            text_prompt: A natural-language description of the objects to
-                segment, e.g. ``"pigeon"``.
+            frame_bgr: NumPy array ``(H, W, 3)`` in BGR colour order.
+            text_prompt: Natural-language description of objects to segment,
+                e.g. ``"pigeon"``.
 
         Returns:
-            A list of detection dicts, each containing:
-
-            * **mask** — ``np.ndarray`` of shape ``(H, W)`` with dtype
-              ``bool``, ``True`` where the object is present.
-            * **bbox** — ``[x1, y1, x2, y2]`` pixel coordinates.
-            * **confidence** — ``float`` in ``[0, 1]``.
-            * **obj_id** — sequential ``int`` starting at ``0``.
+            List of detection dicts with keys ``mask`` (bool ``HxW``),
+            ``bbox`` (``[x1, y1, x2, y2]``), ``confidence`` (float),
+            ``obj_id`` (sequential int).
 
         Raises:
             RuntimeError: If :meth:`load` has not been called.
         """
-        if self._predictor is None:
+        if not self._loaded:
             raise RuntimeError("Model not loaded. Call load() first.")
 
-        # SAM2 expects RGB input
-        rgb_frame = frame[:, :, ::-1]  # BGR → RGB
+        # Convert BGR numpy to RGB PIL Image
+        rgb = frame_bgr[:, :, ::-1]
+        image = Image.fromarray(rgb)
 
-        self._predictor.set_image(rgb_frame)
-
-        # Use automatic mask generation with text guidance.
-        # SAM2ImagePredictor.predict() returns (masks, scores, logits).
-        masks, scores, _ = self._predictor.predict(
-            point_coords=None,
-            point_labels=None,
-            multimask_output=True,
+        processor = Sam3Processor(self._image_model)
+        inference_state = processor.set_image(image)
+        output = processor.set_text_prompt(
+            state=inference_state,
+            prompt=text_prompt,
         )
 
-        # If predict returns a 2-D scores tensor, flatten it.
-        if hasattr(scores, "shape") and scores.ndim > 1:
-            scores = scores.flatten()
-        if hasattr(masks, "shape") and masks.ndim == 4:
-            # (num_masks, 1, H, W) → (num_masks, H, W)
-            masks = masks.squeeze(1)
+        masks = output["masks"]
+        boxes = output["boxes"]
+        scores = output["scores"]
 
         results: list[dict] = []
         for idx in range(len(scores)):
             mask = masks[idx]
-
-            # Convert torch tensors to numpy if necessary
             if isinstance(mask, torch.Tensor):
                 mask = mask.cpu().numpy()
-            score = float(scores[idx]) if not isinstance(scores[idx], float) else scores[idx]
-
             mask_bool = mask.astype(bool)
 
-            # Derive bounding box from mask
-            ys, xs = np.where(mask_bool)
-            if len(xs) == 0:
-                continue
+            box = boxes[idx]
+            if isinstance(box, torch.Tensor):
+                box = box.cpu().tolist()
+            bbox = [int(box[0]), int(box[1]), int(box[2]), int(box[3])]
 
-            bbox = [int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())]
+            score = float(scores[idx])
 
             results.append({
                 "mask": mask_bool,
@@ -188,19 +191,110 @@ class SAM3Wrapper:
                 "obj_id": idx,
             })
 
-        # Sort by confidence descending, re-assign sequential obj_id
+        # Sort by confidence descending, re-assign obj_id
         results.sort(key=lambda d: d["confidence"], reverse=True)
         for i, det in enumerate(results):
             det["obj_id"] = i
 
+        logger.debug(
+            "SAM 3 image API: %d detection(s) for prompt=%r on %dx%d frame",
+            len(results), text_prompt, frame_bgr.shape[1], frame_bgr.shape[0],
+        )
+        return results
+
+    # ------------------------------------------------------------------
+    # Video API — session-based tracking
+    # ------------------------------------------------------------------
+
+    def start_video_session(self, video_path: str) -> str:
+        """Start a SAM 3 video tracking session.
+
+        Args:
+            video_path: Path to the video file.
+
+        Returns:
+            A session ID string for use with :meth:`predict_video_frame`.
+
+        Raises:
+            RuntimeError: If :meth:`load` has not been called.
+        """
+        if not self._loaded:
+            raise RuntimeError("Model not loaded. Call load() first.")
+
+        response = self._video_predictor.handle_request(
+            type="start_session",
+            resource_path=video_path,
+        )
+        session_id: str = response["session_id"]
         logger.info(
-            "SAM2 predicted %d mask(s) for prompt=%r on frame %dx%d",
-            len(results),
-            text_prompt,
-            frame.shape[1],
-            frame.shape[0],
+            "SAM 3 video session started: %s for %s", session_id, video_path,
+        )
+        return session_id
+
+    def predict_video_frame(
+        self,
+        session_id: str,
+        frame_index: int,
+        text_prompt: str,
+    ) -> list[dict]:
+        """Run segmentation on a single frame within a video session.
+
+        Uses SAM 3's video API for temporally-consistent tracking.
+
+        Args:
+            session_id: Session ID from :meth:`start_video_session`.
+            frame_index: Zero-based frame index.
+            text_prompt: Object description, e.g. ``"pigeon"``.
+
+        Returns:
+            List of detection dicts with keys ``mask``, ``bbox``,
+            ``confidence``, ``obj_id``.
+
+        Raises:
+            RuntimeError: If :meth:`load` has not been called.
+        """
+        if not self._loaded:
+            raise RuntimeError("Model not loaded. Call load() first.")
+
+        response = self._video_predictor.handle_request(
+            type="add_prompt",
+            session_id=session_id,
+            frame_index=frame_index,
+            text=text_prompt,
         )
 
+        outputs = response.get("outputs", [])
+        results: list[dict] = []
+
+        for idx, out in enumerate(outputs):
+            mask = out.get("mask")
+            if isinstance(mask, torch.Tensor):
+                mask = mask.cpu().numpy()
+            if mask is not None:
+                mask = mask.astype(bool)
+
+            box = out.get("box", out.get("bbox", [0, 0, 0, 0]))
+            if isinstance(box, torch.Tensor):
+                box = box.cpu().tolist()
+            bbox = [int(box[0]), int(box[1]), int(box[2]), int(box[3])]
+
+            score = float(out.get("score", out.get("confidence", 0.0)))
+
+            results.append({
+                "mask": mask,
+                "bbox": bbox,
+                "confidence": round(score, 4),
+                "obj_id": idx,
+            })
+
+        results.sort(key=lambda d: d["confidence"], reverse=True)
+        for i, det in enumerate(results):
+            det["obj_id"] = i
+
+        logger.debug(
+            "SAM 3 video API: %d detection(s) at frame %d, session=%s",
+            len(results), frame_index, session_id,
+        )
         return results
 
 
@@ -212,14 +306,14 @@ _instance: SAM3Wrapper | None = None
 
 
 def get_sam3(checkpoint_path: str | None = None) -> SAM3Wrapper:
-    """Return the module-level SAM3Wrapper singleton, creating it if needed.
+    """Return the module-level SAM3Wrapper singleton, creating if needed.
 
-    On first call the model is instantiated and :meth:`SAM3Wrapper.load` is
-    invoked.  Subsequent calls return the cached instance.
+    On first call the model is instantiated and :meth:`SAM3Wrapper.load`
+    is invoked. Subsequent calls return the cached instance.
 
     Args:
-        checkpoint_path: Path to the SAM2 checkpoint.  Defaults to
-            ``backend/checkpoints/sam2_hiera_large.pt`` when *None*.
+        checkpoint_path: Path to the SAM 3 checkpoint. Defaults to
+            ``data/models/sam3/sam3_hiera_large.pt`` when *None*.
 
     Returns:
         A loaded :class:`SAM3Wrapper` ready for inference.
@@ -229,8 +323,7 @@ def get_sam3(checkpoint_path: str | None = None) -> SAM3Wrapper:
     if _instance is not None:
         return _instance
 
-    path = checkpoint_path or DEFAULT_CHECKPOINT
-    wrapper = SAM3Wrapper(checkpoint_path=path)
+    wrapper = SAM3Wrapper(checkpoint_path=checkpoint_path)
     wrapper.load()
     _instance = wrapper
     return _instance
