@@ -138,6 +138,18 @@ export default function VideoDetail() {
     return () => window.removeEventListener("keydown", handleKey);
   }, [frameNum, goToFrame]);
 
+  // Preload adjacent frames for instant navigation
+  useEffect(() => {
+    const preload = (n: number) => {
+      if (n >= 0 && n < totalFrames) {
+        const img = new Image();
+        img.src = getFrameUrl(videoId, n, showOverlays);
+      }
+    };
+    preload(frameNum - 1);
+    preload(frameNum + 1);
+  }, [videoId, frameNum, totalFrames, showOverlays]);
+
   // --- Render ---
 
   if (videoQuery.isLoading) return <LoadingState variant="detail" />;
