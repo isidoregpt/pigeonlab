@@ -81,7 +81,12 @@ async def list_videos(
 
         offset = (page - 1) * per_page
         rows = conn.execute(
-            f"SELECT * FROM videos ORDER BY {order_col} DESC LIMIT ? OFFSET ?",
+            f"""SELECT v.*, COUNT(DISTINCT va.pigeon_id) AS pigeon_count
+                FROM videos v
+                LEFT JOIN video_assignments va ON va.video_id = v.video_id
+                GROUP BY v.video_id
+                ORDER BY {order_col} DESC
+                LIMIT ? OFFSET ?""",
             (per_page, offset),
         ).fetchall()
 
