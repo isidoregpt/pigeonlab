@@ -865,8 +865,6 @@ benchmark_results (standalone)
 4. **Droppings Map** — same canvas heatmap but with red accent color. Shows "Not yet benchmarked" warning banner.
 5. **Export buttons** — "Export as PDF" (shows alert — not implemented), "Export Data as CSV" (calls createExport mutation).
 
-**⚠️ KNOWN BUG:** Export URL is double-prefixed. `getExportDownloadUrl` adds `/api/export/download/` but the backend response `download_url` already contains this path.
-
 ### Review (`/review`)
 
 **Routing logic in the Review component:**
@@ -1213,9 +1211,9 @@ Frontend Component
     → Check /api/review/attention?limit=5 — returns items?
   → Videos: Check /api/videos — returns videos array?
   → VideoDetail pigeon cards empty:
-    → This is BUG-002 — GET /videos/{id}/features endpoint doesn't exist
+    → The features endpoint exists at GET /videos/{id}/frame/{frame_num}/features
   → VideoDetail edit history empty:
-    → This is BUG-003 — GET /videos/{id}/track-edits endpoint doesn't exist
+    → The track-edits endpoint exists at GET /videos/{id}/track-edits
   → Insights heatmap blank:
     → Check /api/insights/heatmap — does grid have any non-zero values?
     → If all zeros: no features data exists for the selected period/pigeons
@@ -1241,10 +1239,8 @@ Frontend Component
 ### "Export CSV download fails"
 
 ```
-→ This is BUG-001 — double-prefixed URL
-→ Check browser Network tab — the download URL will look like:
-  /api/export/download//api/export/download/features_abc123.csv
-→ Fix: in insights.ts, getExportDownloadUrl should return the path as-is
+→ Export CSV download is working. If issues occur, check the Network tab
+  in the browser to verify the download URL is correctly formed.
 ```
 
 ### "Training readiness shows 0 clips for all classes"
