@@ -1,0 +1,172 @@
+# PigeonLab License
+
+## Non-Commercial Open Source License (NCOSL) v1.0
+
+Copyright (c) 2026 Jonathan Graziola. All rights reserved.
+
+---
+
+### Plain Language Summary
+
+> **You CAN:** view, use, modify, and share PigeonLab for research, education,
+> and personal use — completely free.
+>
+> **You CANNOT:** sell it, charge money for it, include it in a paid product,
+> or offer it as a commercial service.
+
+---
+
+### Full License Terms
+
+Permission is hereby granted, free of charge, to any person or organization
+obtaining a copy of this software and associated documentation files (the
+"Software"), to use, copy, modify, merge, publish, and distribute the
+Software, subject to the following conditions:
+
+#### 1. Non-Commercial Use Only
+
+The Software may only be used for **non-commercial purposes**. Non-commercial
+purposes include, but are not limited to:
+
+- Academic and scientific research at any university, college, or research
+  institution worldwide — public or private, regardless of funding source
+  (grants, government funding, and institutional funding are all fine)
+- Education, teaching, and coursework at any educational institution
+- Student projects, theses, and dissertations
+- Personal and hobbyist projects
+- Internal use within non-profit research organizations
+- Government-funded research programs
+- Collaborative research between academic institutions
+- Publication of research results, datasets, and findings produced using
+  the Software in journals, conferences, posters, and presentations
+
+**To be clear:** If you work at a university or research institution and you
+are using PigeonLab for research or teaching, you can use it for free. Period.
+This includes grant-funded research, multi-institution collaborations, and
+research that may eventually lead to publications or patents on your
+*findings* (not on the Software itself).
+
+#### 2. Commercial Use Is Prohibited
+
+You **may not**, without prior written permission from the copyright holders:
+
+- Sell, rent, lease, or sublicense the Software or any derivative work
+- Use the Software to provide paid services, consulting, or hosted platforms
+- Include the Software, in whole or in part, in any product or service that
+  is sold or offered for a fee
+- Use the Software in any revenue-generating activity, whether directly or
+  indirectly (e.g., as part of a SaaS product, data processing pipeline
+  sold to clients, or any offering where access to the Software's
+  functionality is exchanged for payment)
+- Offer the Software as a managed or hosted service to third parties,
+  whether paid or ad-supported
+
+#### 3. Attribution Required
+
+All copies, modifications, and derivative works must:
+
+- Retain this license file in its entirety
+- Include clear attribution to "PigeonLab" and a link to the original
+  repository
+- Not misrepresent the origin of the Software or claim endorsement by the
+  original authors without written permission
+
+#### 4. Modifications and Derivative Works
+
+You are free to modify the Software and distribute your modifications,
+provided that:
+
+- The modified version is distributed under this same license
+- The modified version is clearly marked as modified, with a description
+  of the changes made
+- The modified version is not used for any commercial purpose as defined
+  in Section 2
+
+#### 5. No Warranty
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING
+FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+#### 6. Termination
+
+This license is automatically terminated if you violate any of its terms.
+Upon termination, you must destroy all copies of the Software in your
+possession.
+
+#### 7. Commercial Licensing
+
+If you wish to use PigeonLab for commercial purposes, please contact the
+copyright holders to discuss a separate commercial license agreement.
+
+Contact: isidore.gpt@gmail.com
+
+#### 8. Governing Law
+
+This license shall be governed by and construed in accordance with the laws
+of the Commonwealth of Pennsylvania, United States, without regard to its
+conflict of law provisions.
+
+---
+
+### Frequently Asked Questions
+
+**Q: Can I use PigeonLab for my university research?**
+A: Yes. Any researcher at any university or college, anywhere in the world,
+can use PigeonLab completely free. This includes undergraduate, graduate,
+postdoctoral, and faculty research.
+
+**Q: What about grant-funded research?**
+A: Totally fine. Research funded by NIH, NSF, ERC, UKRI, or any other grant
+agency is fully permitted. The funding source doesn't matter — if you're
+doing research, you can use it.
+
+**Q: Can I publish papers using data analyzed by PigeonLab?**
+A: Yes. Publishing research results is permitted and encouraged. Please cite
+PigeonLab in your publications.
+
+**Q: Can I share PigeonLab with a collaborator at another university?**
+A: Yes. You can share the Software with any academic collaborator. They get
+the same rights under this license.
+
+**Q: Can I modify PigeonLab and share my version with other labs?**
+A: Yes, as long as your modified version keeps this same license and is not
+sold or commercialized.
+
+**Q: Can I use PigeonLab in a course I teach?**
+A: Yes. Educational use is fully permitted, including distributing it to
+students.
+
+**Q: Can I use it for research on animals other than pigeons?**
+A: Yes. The license doesn't restrict what species you study. If you adapt
+the Software for other research, that's fine under this license.
+
+**Q: Can a company use PigeonLab internally?**
+A: No, not without a separate commercial license. Internal corporate use is
+considered commercial use, even if the Software itself is not being resold.
+
+**Q: Can I build a paid SaaS product using PigeonLab?**
+A: No. This is explicitly prohibited without a commercial license.
+
+**Q: Can I fork PigeonLab and sell my version?**
+A: No. Derivative works must use this same non-commercial license.
+
+**Q: What if a company sponsors my academic research and I use PigeonLab?**
+A: If you are a researcher at an academic institution and the work is
+academic research (even if industry-sponsored), you may use PigeonLab. If
+the company itself is running PigeonLab on their own systems for their own
+purposes, they need a commercial license.
+
+**Q: What if I'm a nonprofit animal research organization?**
+A: Non-profit research organizations may use PigeonLab freely. If your
+organization generates revenue from services that incorporate PigeonLab,
+please contact us to discuss licensing.
+
+**Q: Can a zoo or wildlife sanctuary use it?**
+A: Yes, as long as they are not selling PigeonLab or offering it as a
+paid service. Internal research and animal welfare use at non-commercial
+organizations is permitted.
