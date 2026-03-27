@@ -1,0 +1,1620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PigeonLab — Setup Guide</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=DM+Sans:wght@300;400;500&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #FAFAF8;
+    --surface: #FFFFFF;
+    --teal: #0D9488;
+    --teal-light: #CCFBF1;
+    --teal-mid: #14B8A6;
+    --amber: #F59E0B;
+    --amber-light: #FEF3C7;
+    --green: #16A34A;
+    --green-light: #DCFCE7;
+    --red: #DC2626;
+    --red-light: #FEE2E2;
+    --blue: #2563EB;
+    --blue-light: #DBEAFE;
+    --ink: #1C1917;
+    --ink-mid: #44403C;
+    --ink-light: #78716C;
+    --border: #E7E5E4;
+    --border-mid: #D6D3D1;
+    --step-num: #0D9488;
+    --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 16px rgba(0,0,0,0.04);
+    --shadow-hover: 0 4px 12px rgba(0,0,0,0.12), 0 8px 32px rgba(0,0,0,0.06);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.7;
+    font-size: 15px;
+  }
+
+  /* ── HERO ── */
+  .hero {
+    background: linear-gradient(135deg, #0f2027 0%, #1a3a3a 40%, #0D9488 100%);
+    color: white;
+    padding: 80px 40px 72px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.03'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+  }
+  .hero-pigeon {
+    font-size: 64px;
+    display: block;
+    margin-bottom: 20px;
+    filter: drop-shadow(0 4px 12px rgba(0,0,0,0.3));
+    animation: float 3s ease-in-out infinite;
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+  }
+  .hero h1 {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(2.2rem, 5vw, 3.4rem);
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    margin-bottom: 12px;
+  }
+  .hero-sub {
+    font-size: 1.1rem;
+    opacity: 0.82;
+    max-width: 520px;
+    margin: 0 auto 28px;
+    font-weight: 300;
+  }
+  .hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 100px;
+    padding: 8px 20px;
+    font-size: 0.82rem;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+
+  /* ── LAYOUT ── */
+  .container {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  /* ── TOC ── */
+  .toc {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px 36px;
+    margin: 40px auto;
+    max-width: 860px;
+    margin-left: auto;
+    margin-right: auto;
+    box-shadow: var(--shadow);
+  }
+  .toc h2 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.25rem;
+    margin-bottom: 20px;
+    color: var(--ink);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .toc-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 8px;
+  }
+  .toc-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    text-decoration: none;
+    color: var(--ink-mid);
+    font-size: 0.9rem;
+    font-weight: 500;
+    transition: all 0.15s;
+    border: 1px solid transparent;
+  }
+  .toc-item:hover {
+    background: var(--teal-light);
+    border-color: var(--teal);
+    color: var(--teal);
+  }
+  .toc-num {
+    width: 24px;
+    height: 24px;
+    background: var(--teal-light);
+    color: var(--teal);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  /* ── CALLOUT BOXES ── */
+  .callout {
+    display: flex;
+    gap: 14px;
+    padding: 18px 20px;
+    border-radius: 12px;
+    margin: 24px 0;
+    border: 1px solid;
+    font-size: 0.92rem;
+    line-height: 1.6;
+  }
+  .callout-icon { font-size: 1.3rem; flex-shrink: 0; margin-top: 1px; }
+  .callout-body { flex: 1; }
+  .callout-body strong { display: block; font-weight: 600; margin-bottom: 3px; }
+  .callout.info    { background: var(--blue-light);  border-color: #93C5FD; color: #1E40AF; }
+  .callout.success { background: var(--green-light); border-color: #86EFAC; color: #14532D; }
+  .callout.warning { background: var(--amber-light); border-color: #FCD34D; color: #78350F; }
+  .callout.tip     { background: var(--teal-light);  border-color: #5EEAD4; color: #134E4A; }
+
+  /* ── SECTION HEADERS ── */
+  .section {
+    margin: 56px 0 32px;
+  }
+  .section-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--teal-light);
+    color: var(--teal);
+    border-radius: 100px;
+    padding: 4px 14px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  .section h2 {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(1.5rem, 3vw, 2rem);
+    color: var(--ink);
+    line-height: 1.25;
+    margin-bottom: 10px;
+  }
+  .section-desc {
+    color: var(--ink-light);
+    font-size: 0.97rem;
+    max-width: 640px;
+    margin-bottom: 28px;
+  }
+
+  /* ── STEP CARDS ── */
+  .steps { display: flex; flex-direction: column; gap: 16px; }
+  .step {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+    transition: box-shadow 0.2s;
+  }
+  .step:hover { box-shadow: var(--shadow-hover); }
+  .step-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 22px 24px 20px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .step-number {
+    width: 36px;
+    height: 36px;
+    background: var(--teal);
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.9rem;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .step-title { flex: 1; }
+  .step-title h3 { font-size: 1.05rem; font-weight: 600; margin-bottom: 3px; color: var(--ink); }
+  .step-title p { font-size: 0.88rem; color: var(--ink-light); line-height: 1.5; }
+  .step-toggle {
+    color: var(--ink-light);
+    font-size: 1.2rem;
+    transition: transform 0.2s;
+    flex-shrink: 0;
+    margin-top: 6px;
+  }
+  .step.open .step-toggle { transform: rotate(180deg); }
+  .step-body { padding: 0 24px 24px 76px; display: none; }
+  .step.open .step-body { display: block; }
+
+  /* ── CODE BLOCKS ── */
+  .code-block {
+    background: #1C1917;
+    border-radius: 10px;
+    margin: 14px 0;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  }
+  .code-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    background: #292524;
+    border-bottom: 1px solid #3C3836;
+  }
+  .code-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.72rem;
+    color: #A8A29E;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+  }
+  .copy-btn {
+    background: #3C3836;
+    border: none;
+    color: #A8A29E;
+    font-size: 0.78rem;
+    padding: 4px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+    transition: all 0.15s;
+  }
+  .copy-btn:hover { background: var(--teal); color: white; }
+  .copy-btn.copied { background: var(--green); color: white; }
+  pre {
+    padding: 18px 20px;
+    margin: 0;
+    overflow-x: auto;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.83rem;
+    line-height: 1.7;
+    color: #E7E5E4;
+  }
+  pre .comment { color: #78716C; }
+  pre .cmd { color: #5EEAD4; }
+  pre .path { color: #FCD34D; }
+  pre .url { color: #93C5FD; }
+  pre .success { color: #86EFAC; }
+
+  /* ── INLINE CODE ── */
+  code {
+    font-family: 'DM Mono', monospace;
+    background: #F5F5F4;
+    border: 1px solid var(--border-mid);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 0.85em;
+    color: var(--teal);
+  }
+
+  /* ── CHECKLIST ── */
+  .checklist { list-style: none; display: flex; flex-direction: column; gap: 10px; margin: 16px 0; }
+  .checklist li {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    font-size: 0.93rem;
+    color: var(--ink-mid);
+    line-height: 1.5;
+  }
+  .checklist li::before {
+    content: '○';
+    color: var(--border-mid);
+    font-size: 1rem;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  /* ── WHAT YOU NEED TABLE ── */
+  .requirements-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 14px;
+    margin: 20px 0;
+  }
+  .req-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 20px;
+    box-shadow: var(--shadow);
+  }
+  .req-card .req-icon { font-size: 1.8rem; margin-bottom: 10px; display: block; }
+  .req-card h4 { font-size: 0.95rem; font-weight: 600; margin-bottom: 4px; }
+  .req-card p { font-size: 0.82rem; color: var(--ink-light); line-height: 1.5; }
+  .req-card .req-link {
+    display: inline-block;
+    margin-top: 8px;
+    font-size: 0.8rem;
+    color: var(--teal);
+    text-decoration: none;
+    font-weight: 500;
+  }
+  .req-card .req-link:hover { text-decoration: underline; }
+
+  /* ── HOW-TO CARDS ── */
+  .howto-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+  .howto-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 24px;
+    box-shadow: var(--shadow);
+    transition: all 0.2s;
+    cursor: default;
+  }
+  .howto-card:hover {
+    border-color: var(--teal);
+    box-shadow: var(--shadow-hover);
+    transform: translateY(-2px);
+  }
+  .howto-emoji { font-size: 2rem; display: block; margin-bottom: 12px; }
+  .howto-card h3 { font-size: 1rem; font-weight: 600; margin-bottom: 8px; }
+  .howto-card p { font-size: 0.87rem; color: var(--ink-light); line-height: 1.6; }
+  .howto-steps { list-style: none; margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+  .howto-steps li {
+    display: flex;
+    gap: 10px;
+    font-size: 0.85rem;
+    color: var(--ink-mid);
+    line-height: 1.45;
+  }
+  .howto-steps li span.n {
+    background: var(--teal-light);
+    color: var(--teal);
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    font-weight: 700;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  /* ── STATUS BADGE ── */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 10px;
+    border-radius: 100px;
+    font-size: 0.78rem;
+    font-weight: 600;
+  }
+  .badge.green  { background: var(--green-light); color: var(--green); }
+  .badge.amber  { background: var(--amber-light); color: #92400E; }
+  .badge.teal   { background: var(--teal-light);  color: var(--teal); }
+  .badge.red    { background: var(--red-light);   color: var(--red); }
+
+  /* ── DIVIDER ── */
+  .divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 48px 0;
+  }
+
+  /* ── TROUBLE TABLE ── */
+  .trouble-table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 0.88rem; }
+  .trouble-table th {
+    background: #F5F5F4;
+    padding: 10px 14px;
+    text-align: left;
+    font-weight: 600;
+    color: var(--ink-mid);
+    border-bottom: 2px solid var(--border-mid);
+  }
+  .trouble-table td {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+    color: var(--ink-mid);
+    line-height: 1.55;
+  }
+  .trouble-table tr:last-child td { border-bottom: none; }
+  .trouble-table tr:nth-child(even) td { background: #FAFAF8; }
+  .trouble-table td:first-child { color: var(--red); font-weight: 500; }
+
+  /* ── FOOTER ── */
+  .footer {
+    background: #1C1917;
+    color: #A8A29E;
+    text-align: center;
+    padding: 40px 24px;
+    margin-top: 80px;
+    font-size: 0.85rem;
+    line-height: 1.8;
+  }
+  .footer strong { color: #E7E5E4; }
+
+  /* ── PROGRESS BAR ── */
+  .progress-bar {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    height: 3px;
+    background: var(--border);
+  }
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--teal), var(--teal-mid));
+    width: 0%;
+    transition: width 0.1s;
+  }
+
+  /* ── URL BLOCK ── */
+  .url-card {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: var(--blue-light);
+    border: 1px solid #93C5FD;
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin: 14px 0;
+    text-decoration: none;
+    color: var(--blue);
+    transition: all 0.15s;
+  }
+  .url-card:hover { border-color: var(--blue); background: #BFDBFE; }
+  .url-card .url-icon { font-size: 1.2rem; }
+  .url-card .url-text { flex: 1; }
+  .url-card .url-text strong { display: block; font-size: 0.92rem; font-weight: 600; }
+  .url-card .url-text span { font-size: 0.82rem; opacity: 0.75; font-family: 'DM Mono', monospace; }
+
+  /* ── INLINE LIST ── */
+  ol.nice, ul.nice { padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; margin: 14px 0; }
+  ol.nice { counter-reset: nice-counter; }
+  ol.nice li { counter-increment: nice-counter; display: flex; gap: 12px; font-size: 0.93rem; color: var(--ink-mid); }
+  ol.nice li::before {
+    content: counter(nice-counter);
+    min-width: 24px; height: 24px;
+    background: var(--teal); color: white;
+    border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    font-size: 0.72rem; font-weight: 700; flex-shrink: 0; margin-top: 1px;
+  }
+  ul.nice li { display: flex; gap: 10px; font-size: 0.93rem; color: var(--ink-mid); }
+  ul.nice li::before { content: '→'; color: var(--teal); font-weight: 700; flex-shrink: 0; }
+
+  p.body { font-size: 0.93rem; color: var(--ink-mid); margin: 10px 0; line-height: 1.7; }
+
+  @media (max-width: 600px) {
+    .hero { padding: 56px 20px 48px; }
+    .step-body { padding: 0 16px 20px 16px; }
+    .toc { padding: 24px 20px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+
+<!-- HERO -->
+<div class="hero">
+  <span class="hero-pigeon">🕊️</span>
+  <h1>PigeonLab Setup Guide</h1>
+  <p class="hero-sub">Everything you need to get PigeonLab running on your Windows 11 computer — step by step, no technical experience required.</p>
+  <span class="hero-badge">⏱ About 30–45 minutes total</span>
+</div>
+
+<div class="container">
+
+  <!-- CALLOUT: Before you start -->
+  <div class="callout info" style="margin-top:32px;">
+    <span class="callout-icon">💡</span>
+    <div class="callout-body">
+      <strong>Before you begin</strong>
+      You will download and install several free programs. Each one is safe, from official sources, and used by researchers and developers worldwide. None of them cost anything.
+    </div>
+  </div>
+
+  <!-- TABLE OF CONTENTS -->
+  <div class="toc">
+    <h2>📋 What's in this guide</h2>
+    <div class="toc-grid">
+      <a href="#requirements" class="toc-item"><span class="toc-num">1</span> What You Need</a>
+      <a href="#python" class="toc-item"><span class="toc-num">2</span> Install Python</a>
+      <a href="#nodejs" class="toc-item"><span class="toc-num">3</span> Install Node.js</a>
+      <a href="#git" class="toc-item"><span class="toc-num">4</span> Install Git</a>
+      <a href="#cuda" class="toc-item"><span class="toc-num">5</span> Install CUDA &amp; GPU Drivers</a>
+      <a href="#pytorch" class="toc-item"><span class="toc-num">6</span> Install PyTorch</a>
+      <a href="#pigeonlab" class="toc-item"><span class="toc-num">7</span> Set Up PigeonLab</a>
+      <a href="#sam3" class="toc-item"><span class="toc-num">8</span> Set Up SAM 3</a>
+      <a href="#launch" class="toc-item"><span class="toc-num">9</span> Launch PigeonLab</a>
+      <a href="#howto" class="toc-item"><span class="toc-num">10</span> How To Use It</a>
+      <a href="#trouble" class="toc-item"><span class="toc-num">11</span> Troubleshooting</a>
+      <a href="#daily" class="toc-item"><span class="toc-num">12</span> Daily Startup</a>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- SECTION 1: REQUIREMENTS -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div class="section" id="requirements">
+    <span class="section-label">Step 1</span>
+    <h2>What You Need</h2>
+    <p class="section-desc">Make sure your computer meets these requirements before you start. If anything is missing, don't worry — we'll install everything together.</p>
+
+    <div class="requirements-grid">
+      <div class="req-card">
+        <span class="req-icon">🖥️</span>
+        <h4>Windows 11 (64-bit)</h4>
+        <p>PigeonLab runs on Windows 11. To check: press <strong>Windows + Pause</strong> and look for "64-bit operating system".</p>
+      </div>
+      <div class="req-card">
+        <span class="req-icon">🎮</span>
+        <h4>NVIDIA GPU</h4>
+        <p>You need an NVIDIA graphics card (like the A6000 or any modern RTX card). This is what makes video processing fast.</p>
+      </div>
+      <div class="req-card">
+        <span class="req-icon">💾</span>
+        <h4>20 GB Free Disk Space</h4>
+        <p>For the software, models, and your video files. More is better — pigeon videos add up quickly.</p>
+      </div>
+      <div class="req-card">
+        <span class="req-icon">🌐</span>
+        <h4>Internet Connection</h4>
+        <p>You'll need internet to download software and the AI model. After setup, PigeonLab works entirely offline.</p>
+      </div>
+      <div class="req-card">
+        <span class="req-icon">🐍</span>
+        <h4>Python 3.12</h4>
+        <p>The programming language PigeonLab is built on. We'll install this in Step 2.</p>
+        <a href="https://www.python.org/downloads/" class="req-link" target="_blank">python.org/downloads →</a>
+      </div>
+      <div class="req-card">
+        <span class="req-icon">📦</span>
+        <h4>Node.js 18+</h4>
+        <p>Powers the visual interface you see in your browser. We'll install this in Step 3.</p>
+        <a href="https://nodejs.org/" class="req-link" target="_blank">nodejs.org →</a>
+      </div>
+    </div>
+
+    <div class="callout tip">
+      <span class="callout-icon">🖥️</span>
+      <div class="callout-body">
+        <strong>How to open Command Prompt</strong>
+        Throughout this guide, you'll need to type commands. To open Command Prompt: press the <strong>Windows key</strong>, type <code>cmd</code>, then press <strong>Enter</strong>. A black window will appear — that's your Command Prompt. Keep it open while working through the steps.
+      </div>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- SECTION 2: PYTHON -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div class="section" id="python">
+    <span class="section-label">Step 2</span>
+    <h2>Install Python 3.12</h2>
+    <p class="section-desc">Python is the engine that runs PigeonLab's brain. Install it exactly as described below — the version number matters.</p>
+
+    <div class="steps">
+      <div class="step open">
+        <div class="step-header" onclick="toggleStep(this)">
+          <div class="step-number">1</div>
+          <div class="step-title">
+            <h3>Download Python 3.12</h3>
+            <p>Go to the official Python website and download the installer</p>
+          </div>
+          <span class="step-toggle">▾</span>
+        </div>
+        <div class="step-body">
+          <a href="https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe" class="url-card" target="_blank">
+            <span class="url-icon">⬇️</span>
+            <div class="url-text">
+              <strong>Download Python 3.12.10 (64-bit) — Direct Link</strong>
+              <span>python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe</span>
+            </div>
+          </a>
+          <p class="body">Click the link above. A file called <code>python-3.12.10-amd64.exe</code> will download to your Downloads folder.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-header" onclick="toggleStep(this)">
+          <div class="step-number">2</div>
+          <div class="step-title">
+            <h3>Run the installer</h3>
+            <p>⚠️ There is ONE critical checkbox you must tick</p>
+          </div>
+          <span class="step-toggle">▾</span>
+        </div>
+        <div class="step-body">
+          <div class="callout warning">
+            <span class="callout-icon">⚠️</span>
+            <div class="callout-body">
+              <strong>This step is critical — don't skip it!</strong>
+              On the first screen of the installer, there is a checkbox at the bottom that says <strong>"Add Python to PATH"</strong>. You MUST check this box before clicking Install. If you miss it, Python won't work properly.
+            </div>
+          </div>
+          <ol class="nice">
+            <li>Double-click the downloaded file to run it</li>
+            <li>Check the box that says <strong>"Add Python 3.12 to PATH"</strong></li>
+            <li>Click <strong>"Install Now"</strong></li>
+            <li>Wait for it to finish, then click <strong>Close</strong></li>
+          </ol>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-header" onclick="toggleStep(this)">
+          <div class="step-number">3</div>
+          <div class="step-title">
+            <h3>Verify the installation</h3>
+            <p>Confirm Python installed correctly by running a quick check</p>
+          </div>
+          <span class="step-toggle">▾</span>
+        </div>
+        <div class="step-body">
+          <p class="body">Open a <strong>new</strong> Command Prompt window (close and reopen it), then paste this command:</p>
+          <div class="code-block">
+            <div class="code-header">
+              <span class="code-label">Command Prompt</span>
+              <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+            </div>
+            <pre><span class="cmd">python --version</span></pre>
+          </div>
+          <div class="callout success">
+            <span class="callout-icon">✅</span>
+            <div class="callout-body">
+              <strong>You should see:</strong> <code>Python 3.12.10</code> — if you see this, Python is installed correctly.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- SECTION 3: NODE.JS -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div class="section" id="nodejs">
+    <span class="section-label">Step 3</span>
+    <h2>Install Node.js</h2>
+    <p class="section-desc">Node.js powers the visual interface — the buttons, screens, and charts you'll see when using PigeonLab.</p>
+
+    <div class="steps">
+      <div class="step open">
+        <div class="step-header" onclick="toggleStep(this)">
+          <div class="step-number">1</div>
+          <div class="step-title">
+            <h3>Download and install Node.js LTS</h3>
+            <p>LTS means "Long Term Support" — the stable, recommended version</p>
+          </div>
+          <span class="step-toggle">▾</span>
+        </div>
+        <div class="step-body">
+          <a href="https://nodejs.org/en/download" class="url-card" target="_blank">
+            <span class="url-icon">⬇️</span>
+            <div class="url-text">
+              <strong>Download Node.js LTS (Windows 64-bit)</strong>
+              <span>nodejs.org/en/download</span>
+            </div>
+          </a>
+          <ol class="nice">
+            <li>Click the link above, then click the big green <strong>"LTS"</strong> button</li>
+            <li>Run the downloaded <code>.msi</code> installer</li>
+            <li>Click <strong>Next</strong> through all the screens — the defaults are fine</li>
+            <li>Click <strong>Finish</strong> when done</li>
+          </ol>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-header" onclick="toggleStep(this)">
+          <div class="step-number">2</div>
+          <div class="step-title">
+            <h3>Verify Node.js installed</h3>
+            <p>Open a new Command Prompt and check</p>
+          </div>
+          <span class="step-toggle">▾</span>
+        </div>
+        <div class="step-body">
+          <div class="code-block">
+            <div class="code-header">
+              <span class="code-label">Command Prompt</span>
+              <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+            </div>
+            <pre><span class="cmd">node --version</span></pre>
+          </div>
+          <div class="callout success">
+            <span class="callout-icon">✅</span>
+            <div class="callout-body"><strong>You should see something like:</strong> <code>v22.x.x</code> — any number 18 or higher is fine.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- SECTION 4: GIT -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div class="section" id="git">
+    <span class="section-label">Step 4</span>
+    <h2>Install Git</h2>
+    <p class="section-desc">Git is a tool that lets you download PigeonLab onto your computer. Think of it as a very smart file copier.</p>
+
+    <div class="steps">
+      <div class="step open">
+        <div class="step-header" onclick="toggleStep(this)">
+          <div class="step-number">1</div>
+          <div class="step-title">
+            <h3>Download and install Git for Windows</h3>
+            <p>Use all the default settings — just click Next through everything</p>
+          </div>
+          <span class="step-toggle">▾</span>
+        </div>
+        <div class="step-body">
+          <a href="https://git-scm.com/download/win" class="url-card" target="_blank">
+            <span class="url-icon">⬇️</span>
+            <div class="url-text">
+              <strong>Download Git for Windows</strong>
+              <span>git-scm.com/download/win</span>
+            </div>
+          </a>
+          <ol class="nice">
+            <li>Click the link above — the download starts automatically</li>
+            <li>Run the installer and click <strong>Next</strong> through every screen</li>
+            <li>Click <strong>Finish</strong> when done</li>
+          </ol>
+          <div class="callout info">
+            <span class="callout-icon">ℹ️</span>
+            <div class="callout-body">There are many screens during the Git install. You do not need to change anything. Just keep clicking <strong>Next</strong> and then <strong>Finish</strong>.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- SECTION 5: CUDA -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div class="section" id="cuda">
+    <span class="section-label">Step 5</span>
+    <h2>Install GPU Drivers &amp; CUDA</h2>
+    <p class="section-desc">CUDA is NVIDIA's toolkit that lets PigeonLab use your graphics card to process video at high speed. Without this, processing would be extremely slow.</p>
+
+    <div class="steps">
+      <div class="step open">
+        <div class="step-header" onclick="toggleStep(this)">
+          <div class="step-number">1</div>
+          <div class="step-title">
+            <h3>Update your NVIDIA drivers</h3>
+            <p>Make sure you have the latest drivers for your GPU</p>
+          </div>
+          <span class="step-toggle">▾</span>
+        </div>
+        <div class="step-body">
+          <a href="https://www.nvidia.com/en-us/drivers/" class="url-card" target="_blank">
+            <span class="url-icon">⬇️</span>
+            <div class="url-text">
+              <strong>NVIDIA Driver Downloads</strong>
+              <span>nvidia.com/en-us/drivers</span>
+            </div>
+          </a>
+          <ol class="nice">
+            <li>Click the link above</li>
+            <li>Select your GPU model (e.g. RTX A6000) and Windows 11 64-bit</li>
+            <li>Download and run the installer</li>
+            <li>Use <strong>Express Installation</strong> — click through to finish</li>
+            <li>Restart your computer when prompted</li>
+          </ol>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-header" onclick="toggleStep(this)">
+          <div class="step-number">2</div>
+          <div class="step-title">
+            <h3>Install CUDA Toolkit 12.6</h3>
+            <p>The software bridge between PigeonLab and your GPU</p>
+          </div>
+          <span class="step-toggle">▾</span>
+        </div>
+        <div class="step-body">
+          <a href="https://developer.nvidia.com/cuda-12-6-0-download-archive" class="url-card" target="_blank">
+            <span class="url-icon">⬇️</span>
+            <div class="url-text">
+              <strong>CUDA Toolkit 12.6 Download</strong>
+              <span>developer.nvidia.com/cuda-12-6-0-download-archive</span>
+            </div>
+          </a>
+          <ol class="nice">
+            <li>On the download page, select: <strong>Windows → x86_64 → 11 → exe (local)</strong></li>
+            <li>Download the installer (it's about 3 GB)</li>
+            <li>Run it and choose <strong>Express Installation</strong></li>
+            <li>Restart your computer when it finishes</li>
+          </ol>
+          <div class="callout warning">
+            <span class="callout-icon">⚠️</span>
+            <div class="callout-body"><strong>Restart required!</strong> After CUDA installs, you must restart your computer before continuing to the next step.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-header" onclick="toggleStep(this)">
+          <div class="step-number">3</div>
+          <div class="step-title">
+            <h3>Verify CUDA is working</h3>
+            <p>Confirm your GPU is recognized</p>
+          </div>
+          <span class="step-toggle">▾</span>
+        </div>
+        <div class="step-body">
+          <div class="code-block">
+            <div class="code-header">
+              <span class="code-label">Command Prompt</span>
+              <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+            </div>
+            <pre><span class="cmd">nvidia-smi</span></pre>
+          </div>
+          <div class="callout success">
+            <span class="callout-icon">✅</span>
+            <div class="callout-body"><strong>You should see</strong> a table showing your GPU name (e.g. NVIDIA RTX A6000) and the CUDA version number. If you see this, you're good to continue.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- SECTION 6: PYTORCH -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div class="section" id="pytorch">
+    <span class="section-label">Step 6</span>
+    <h2>Install PyTorch</h2>
+    <p class="section-desc">PyTorch is the AI framework that PigeonLab uses to run the pigeon detection model. Copy and paste the command below exactly as written.</p>
+
+    <div class="steps">
+      <div class="step open">
+        <div class="step-header" onclick="toggleStep(this)">
+          <div class="step-number">1</div>
+          <div class="step-title">
+            <h3>Install PyTorch with CUDA 12.6 support</h3>
+            <p>This one command installs everything — it will take a few minutes</p>
+          </div>
+          <span class="step-toggle">▾</span>
+        </div>
+        <div class="step-body">
+          <div class="callout info">
+            <span class="callout-icon">📋</span>
+            <div class="callout-body"><strong>Copy the entire command below</strong> — click the Copy button, then paste it into Command Prompt (right-click in the window to paste), then press Enter. Do not type it manually.</div>
+          </div>
+          <div class="code-block">
+            <div class="code-header">
+              <span class="code-label">Command Prompt — paste and press Enter</span>
+              <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+            </div>
+            <pre><span class="cmd">pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126</span></pre>
+          </div>
+          <p class="body">This downloads about 2–3 GB. You'll see a lot of text scrolling by — that's normal. Wait until you see the Command Prompt cursor again (the blinking <code>C:\&gt;</code> line returns).</p>
+          <div class="callout success">
+            <span class="callout-icon">✅</span>
+            <div class="callout-body"><strong>When it finishes</strong>, you'll see "Successfully installed torch..." in green text.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-header" onclick="toggleStep(this)">
+          <div class="step-number">2</div>
+          <div class="step-title">
+            <h3>Verify PyTorch can see your GPU</h3>
+            <p>Run a quick test to make sure everything is connected</p>
+          </div>
+          <span class="step-toggle">▾</span>
+        </div>
+        <div class="step-body">
+          <div class="code-block">
+            <div class="code-header">
+              <span class="code-label">Command Prompt</span>
+              <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+            </div>
+            <pre><span class="cmd">python -c "import torch; print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0))"</span></pre>
+          </div>
+          <div class="callout success">
+            <span class="callout-icon">✅</span>
+            <div class="callout-body"><strong>You should see:</strong><br><code>True</code><br><code>NVIDIA RTX A6000</code> (or your GPU name)<br>If you see <code>True</code>, PyTorch is working with your GPU.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- SECTION 7: PIGEONLAB -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div class="section" id="pigeonlab">
+    <span class="section-label">Step 7</span>
+    <h2>Set Up PigeonLab</h2>
+    <p class="section-desc">Now we download PigeonLab itself and install all its remaining dependencies. Run these commands one at a time, in order.</p>
+
+    <div class="callout tip">
+      <span class="callout-icon">📂</span>
+      <div class="callout-body"><strong>Choose where to put PigeonLab</strong> — We recommend your Documents folder. All the commands below assume you're working from <code>C:\Users\YourName\Documents</code>. To go there, type <code>cd %USERPROFILE%\Documents</code> and press Enter first.</div>
+    </div>
+
+    <div class="steps">
+      <div class="step open">
+        <div class="step-header" onclick="toggleStep(this)">
+          <div class="step-number">1</div>
+          <div class="step-title">
+            <h3>Navigate to Documents and download PigeonLab</h3>
+            <p>Run these two commands in order</p>
+          </div>
+          <span class="step-toggle">▾</span>
+        </div>
+        <div class="step-body">
+          <div class="code-block">
+            <div class="code-header">
+              <span class="code-label">Command Prompt — run each line separately</span>
+              <button class="copy-btn" onclick="copyCode(this)">Copy all</button>
+            </div>
+            <pre><span class="comment">:: Go to your Documents folder</span>
+<span class="cmd">cd %USERPROFILE%\Documents</span>
+
+<span class="comment">:: Download PigeonLab</span>
+<span class="cmd">git clone https://github.com/YOUR-ORG/pigeonlab.git</span>
+
+<span class="comment">:: Enter the PigeonLab folder</span>
+<span class="cmd">cd pigeonlab</span></pre>
+          </div>
+          <div class="callout warning">
+            <span class="callout-icon">⚠️</span>
+            <div class="callout-body"><strong>Replace the URL above</strong> with the actual PigeonLab repository address your lab administrator provides. It will look like <code>https://github.com/labname/pigeonlab.git</code></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-header" onclick="toggleStep(this)">
+          <div class="step-number">2</div>
+          <div class="step-title">
+            <h3>Install all Python packages</h3>
+            <p>This installs everything PigeonLab's backend needs</p>
+          </div>
+          <span class="step-toggle">▾</span>
+        </div>
+        <div class="step-body">
+          <div class="code-block">
+            <div class="code-header">
+              <span class="code-label">Command Prompt</span>
+              <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+            </div>
+            <pre><span class="comment">:: Make sure you are inside the pigeonlab folder first</span>
+<span class="cmd">cd backend</span>
+<span class="cmd">pip install -r requirements.txt</span></pre>
+          </div>
+          <p class="body">This will install: FastAPI, SQLite tools, image processing libraries, HuggingFace Hub, and everything else PigeonLab needs. It may take 3–5 minutes.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-header" onclick="toggleStep(this)">
+          <div class="step-number">3</div>
+          <div class="step-title">
+            <h3>Install the frontend interface</h3>
+            <p>This installs the visual components for the web interface</p>
+          </div>
+          <span class="step-toggle">▾</span>
+        </div>
+        <div class="step-body">
+          <div class="code-block">
+            <div class="code-header">
+              <span class="code-label">Command Prompt</span>
+              <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+            </div>
+            <pre><span class="comment">:: Go back to the main pigeonlab folder, then into frontend</span>
+<span class="cmd">cd ..\frontend</span>
+<span class="cmd">npm install</span></pre>
+          </div>
+          <p class="body">You'll see a lot of text scroll by. This is normal. Wait for the cursor to return.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-header" onclick="toggleStep(this)">
+          <div class="step-number">4</div>
+          <div class="step-title">
+            <h3>Run the environment check</h3>
+            <p>Make sure everything is installed correctly before continuing</p>
+          </div>
+          <span class="step-toggle">▾</span>
+        </div>
+        <div class="step-body">
+          <div class="code-block">
+            <div class="code-header">
+              <span class="code-label">Command Prompt</span>
+              <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+            </div>
+            <pre><span class="cmd">cd ..\backend</span>
+<span class="cmd">python scripts\setup_check.py</span></pre>
+          </div>
+          <p class="body">This runs 16 checks on your system. Each item should show a ✅ green checkmark. The only items that may show ❌ at this point are the SAM 3 checks — that's fine, we'll fix those in the next step.</p>
+          <div class="callout info">
+            <span class="callout-icon">📋</span>
+            <div class="callout-body"><strong>If any other item shows ❌</strong>, note which one and check the Troubleshooting section at the bottom of this guide.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- SECTION 8: SAM 3 -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div class="section" id="sam3">
+    <span class="section-label">Step 8</span>
+    <h2>Set Up SAM 3 (The AI Model)</h2>
+    <p class="section-desc">SAM 3 is the AI model that finds and tracks pigeons in your videos. It's made by Meta (Facebook) and hosted on HuggingFace — a platform for sharing AI models. You'll need to request access before downloading it.</p>
+
+    <div class="callout warning">
+      <span class="callout-icon">⏳</span>
+      <div class="callout-body">
+        <strong>This step involves a waiting period</strong>
+        After requesting access on HuggingFace, you may need to wait a few hours or up to a day for approval. You can continue to Step 9 and load some sample data while you wait — PigeonLab works without the AI model for exploring the interface.
+      </div>
+    </div>
+
+    <div class="steps">
+      <div class="step open">
+        <div class="step-header" onclick="toggleStep(this)">
+          <div class="step-number">1</div>
+          <div class="step-title">
+            <h3>Create a free HuggingFace account</h3>
+            <p>HuggingFace is where AI models are shared — you need a free account to download SAM 3</p>
+          </div>
+          <span class="step-toggle">▾</span>
+        </div>
+        <div class="step-body">
+          <a href="https://huggingface.co/join" class="url-card" target="_blank">
+            <span class="url-icon">🤗</span>
+            <div class="url-text">
+              <strong>Create a free HuggingFace account</strong>
+              <span>huggingface.co/join</span>
+            </div>
+          </a>
+          <ol class="nice">
+            <li>Click the link above and fill in your name, email, and a password</li>
+            <li>Verify your email address (check your inbox)</li>
+            <li>You now have a HuggingFace account</li>
+          </ol>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-header" onclick="toggleStep(this)">
+          <div class="step-number">2</div>
+          <div class="step-title">
+            <h3>Request access to SAM 3</h3>
+            <p>The model requires a one-time access approval from Meta</p>
+          </div>
+          <span class="step-toggle">▾</span>
+        </div>
+        <div class="step-body">
+          <a href="https://huggingface.co/facebook/sam3" class="url-card" target="_blank">
+            <span class="url-icon">🦾</span>
+            <div class="url-text">
+              <strong>SAM 3 Model Page — Request Access</strong>
+              <span>huggingface.co/facebook/sam3</span>
+            </div>
+          </a>
+          <ol class="nice">
+            <li>Make sure you're logged in to HuggingFace</li>
+            <li>Visit the link above</li>
+            <li>Click the <strong>"Request access"</strong> button on the page</li>
+            <li>Fill in any requested information and submit</li>
+            <li>You'll receive an email when access is granted (usually within a day)</li>
+          </ol>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-header" onclick="toggleStep(this)">
+          <div class="step-number">3</div>
+          <div class="step-title">
+            <h3>Log in to HuggingFace on your computer</h3>
+            <p>Do this after your access is approved</p>
+          </div>
+          <span class="step-toggle">▾</span>
+        </div>
+        <div class="step-body">
+          <div class="code-block">
+            <div class="code-header">
+              <span class="code-label">Command Prompt</span>
+              <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+            </div>
+            <pre><span class="cmd">pip install huggingface_hub</span>
+<span class="cmd">huggingface-cli login</span></pre>
+          </div>
+          <p class="body">The second command will ask for a token. To get your token:</p>
+          <ol class="nice">
+            <li>Go to <a href="https://huggingface.co/settings/tokens" target="_blank" style="color:var(--teal)">huggingface.co/settings/tokens</a></li>
+            <li>Click <strong>"New token"</strong>, give it a name, and click <strong>Generate</strong></li>
+            <li>Copy the token (starts with <code>hf_</code>)</li>
+            <li>Paste it into the Command Prompt when asked, then press Enter</li>
+          </ol>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-header" onclick="toggleStep(this)">
+          <div class="step-number">4</div>
+          <div class="step-title">
+            <h3>Download the SAM 3 model files</h3>
+            <p>This downloads about 3–4 GB — leave it running and go get a coffee ☕</p>
+          </div>
+          <span class="step-toggle">▾</span>
+        </div>
+        <div class="step-body">
+          <div class="code-block">
+            <div class="code-header">
+              <span class="code-label">Command Prompt — run from the pigeonlab\backend folder</span>
+              <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+            </div>
+            <pre><span class="cmd">cd %USERPROFILE%\Documents\pigeonlab\backend</span>
+<span class="cmd">python scripts\download_sam3.py</span></pre>
+          </div>
+          <p class="body">You'll see a progress bar as the files download. This may take 10–30 minutes depending on your internet speed. Do not close the Command Prompt window while it's running.</p>
+          <div class="callout success">
+            <span class="callout-icon">✅</span>
+            <div class="callout-body"><strong>When it finishes</strong> you'll see: <em>"SAM 3 downloaded to data/models/sam3. You can now start PigeonLab."</em></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-header" onclick="toggleStep(this)">
+          <div class="step-number">5</div>
+          <div class="step-title">
+            <h3>Run the setup check one more time</h3>
+            <p>Everything should now show green checkmarks</p>
+          </div>
+          <span class="step-toggle">▾</span>
+        </div>
+        <div class="step-body">
+          <div class="code-block">
+            <div class="code-header">
+              <span class="code-label">Command Prompt</span>
+              <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+            </div>
+            <pre><span class="cmd">python scripts\setup_check.py</span></pre>
+          </div>
+          <div class="callout success">
+            <span class="callout-icon">✅</span>
+            <div class="callout-body"><strong>All 16 checks should now show ✅</strong> — if they do, PigeonLab is fully set up and ready to use!</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- SECTION 9: LAUNCH -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div class="section" id="launch">
+    <span class="section-label">Step 9</span>
+    <h2>Launch PigeonLab 🎉</h2>
+    <p class="section-desc">You're ready! There are two ways to start PigeonLab — the easy way and the manual way.</p>
+
+    <div class="steps">
+      <div class="step open">
+        <div class="step-header" onclick="toggleStep(this)">
+          <div class="step-number">⭐</div>
+          <div class="step-title">
+            <h3>Easy way — Double-click to start</h3>
+            <p>Recommended for daily use</p>
+          </div>
+          <span class="step-toggle">▾</span>
+        </div>
+        <div class="step-body">
+          <ol class="nice">
+            <li>Open File Explorer and navigate to your <code>pigeonlab</code> folder</li>
+            <li>Double-click the file called <strong><code>start.bat</code></strong></li>
+            <li>Two windows will open — one for the backend, one for the frontend</li>
+            <li>Wait about 10 seconds, then open your browser</li>
+            <li>Go to: <strong><code>http://localhost:5173</code></strong></li>
+          </ol>
+          <div class="callout success">
+            <span class="callout-icon">🎉</span>
+            <div class="callout-body"><strong>PigeonLab is running!</strong> You should see the PigeonLab home screen in your browser. Bookmark this address for quick access.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-header" onclick="toggleStep(this)">
+          <div class="step-number">2</div>
+          <div class="step-title">
+            <h3>Manual way — two Command Prompt windows</h3>
+            <p>Use this if the start.bat file doesn't work</p>
+          </div>
+          <span class="step-toggle">▾</span>
+        </div>
+        <div class="step-body">
+          <p class="body"><strong>Window 1 — Backend (the brains):</strong></p>
+          <div class="code-block">
+            <div class="code-header">
+              <span class="code-label">Command Prompt — Window 1</span>
+              <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+            </div>
+            <pre><span class="cmd">cd %USERPROFILE%\Documents\pigeonlab\backend</span>
+<span class="cmd">uvicorn main:app --reload --port 8000</span></pre>
+          </div>
+          <p class="body" style="margin-top:16px;"><strong>Window 2 — Frontend (the screen):</strong></p>
+          <div class="code-block">
+            <div class="code-header">
+              <span class="code-label">Command Prompt — Window 2 (open a second one)</span>
+              <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+            </div>
+            <pre><span class="cmd">cd %USERPROFILE%\Documents\pigeonlab\frontend</span>
+<span class="cmd">npm run dev</span></pre>
+          </div>
+          <p class="body" style="margin-top:12px;">Then open your browser and go to <strong><code>http://localhost:5173</code></strong></p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-header" onclick="toggleStep(this)">
+          <div class="step-number">3</div>
+          <div class="step-title">
+            <h3>Load sample data (optional but recommended)</h3>
+            <p>See what PigeonLab looks like with data already in it</p>
+          </div>
+          <span class="step-toggle">▾</span>
+        </div>
+        <div class="step-body">
+          <p class="body">To see PigeonLab with example pigeons and videos already loaded, run this in a Command Prompt while PigeonLab is running:</p>
+          <div class="code-block">
+            <div class="code-header">
+              <span class="code-label">Command Prompt</span>
+              <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+            </div>
+            <pre><span class="cmd">cd %USERPROFILE%\Documents\pigeonlab\backend</span>
+<span class="cmd">python seed_data.py</span></pre>
+          </div>
+          <p class="body">This loads 4 sample pigeons (Alpha, Beta, Gamma, Delta), sample videos, and example analysis results so you can explore all the features.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- SECTION 10: HOW TO USE -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div class="section" id="howto">
+    <span class="section-label">Step 10</span>
+    <h2>How to Use PigeonLab</h2>
+    <p class="section-desc">Here's how to do the most common tasks. Everything is designed to be self-explanatory, but these guides will get you started quickly.</p>
+
+    <div class="howto-grid">
+
+      <div class="howto-card">
+        <span class="howto-emoji">📹</span>
+        <h3>Process Your First Video</h3>
+        <p>PigeonLab will find, track, and analyze all the pigeons automatically.</p>
+        <ul class="howto-steps">
+          <li><span class="n">1</span> Click <strong>Videos</strong> in the left sidebar</li>
+          <li><span class="n">2</span> Click the <strong>+ Add Videos</strong> button</li>
+          <li><span class="n">3</span> Type in the path to your video file (e.g. <code>C:\Videos\session01.mp4</code>)</li>
+          <li><span class="n">4</span> Select the camera type (Overhead, Side, etc.)</li>
+          <li><span class="n">5</span> Enter how many pigeons are in the video</li>
+          <li><span class="n">6</span> Click <strong>Process Videos</strong> and wait — a progress bar will appear</li>
+        </ul>
+      </div>
+
+      <div class="howto-card">
+        <span class="howto-emoji">🐦</span>
+        <h3>Confirm Pigeon Identities</h3>
+        <p>Tell PigeonLab which pigeon is which so it can track them across sessions.</p>
+        <ul class="howto-steps">
+          <li><span class="n">1</span> On the Home screen, look for <strong>"Needs Your Attention"</strong></li>
+          <li><span class="n">2</span> Click <strong>Review Now</strong> next to "unconfirmed identities"</li>
+          <li><span class="n">3</span> You'll see a pigeon highlighted in the video frame</li>
+          <li><span class="n">4</span> Click the matching pigeon card (Alpha, Beta, etc.)</li>
+          <li><span class="n">5</span> Repeat for each pigeon — use <strong>Skip</strong> if you're unsure</li>
+        </ul>
+      </div>
+
+      <div class="howto-card">
+        <span class="howto-emoji">⚡</span>
+        <h3>Review Quality Flags</h3>
+        <p>When the system spots something unusual, it flags it for your review.</p>
+        <ul class="howto-steps">
+          <li><span class="n">1</span> On the Home screen, click <strong>Check Frames</strong> under "Needs Your Attention"</li>
+          <li><span class="n">2</span> You'll see the flagged video frame with a description</li>
+          <li><span class="n">3</span> Click <strong>Looks Fine</strong> if the system made a mistake</li>
+          <li><span class="n">4</span> Click <strong>Fix This</strong> to go to the video and correct it manually</li>
+        </ul>
+      </div>
+
+      <div class="howto-card">
+        <span class="howto-emoji">🗺️</span>
+        <h3>View Heatmaps &amp; Insights</h3>
+        <p>See where your pigeons spend their time and how they interact.</p>
+        <ul class="howto-steps">
+          <li><span class="n">1</span> Click <strong>Insights</strong> in the left sidebar</li>
+          <li><span class="n">2</span> Use the <strong>time period</strong> selector to choose a date range</li>
+          <li><span class="n">3</span> Click a pigeon's name to filter the heatmap to just that pigeon</li>
+          <li><span class="n">4</span> Scroll down to see the Social Map (who spends time near whom)</li>
+          <li><span class="n">5</span> Click <strong>Export Data as CSV</strong> to download your data</li>
+        </ul>
+      </div>
+
+      <div class="howto-card">
+        <span class="howto-emoji">🐦</span>
+        <h3>Register a New Pigeon</h3>
+        <p>Add a new pigeon to PigeonLab before processing videos that include it.</p>
+        <ul class="howto-steps">
+          <li><span class="n">1</span> Click <strong>Pigeons</strong> in the left sidebar</li>
+          <li><span class="n">2</span> Click <strong>+ Register New</strong> in the top right</li>
+          <li><span class="n">3</span> Enter the pigeon's name and physical description (leg bands, markings)</li>
+          <li><span class="n">4</span> Click <strong>Save</strong> — the pigeon is now registered</li>
+        </ul>
+      </div>
+
+      <div class="howto-card">
+        <span class="howto-emoji">📊</span>
+        <h3>Export Your Data</h3>
+        <p>Download your research data as spreadsheet-ready CSV files.</p>
+        <ul class="howto-steps">
+          <li><span class="n">1</span> Click <strong>Insights</strong> in the left sidebar</li>
+          <li><span class="n">2</span> Scroll to the bottom of the page</li>
+          <li><span class="n">3</span> Click <strong>Export Data as CSV</strong></li>
+          <li><span class="n">4</span> Choose what to include: positions, behaviors, social data</li>
+          <li><span class="n">5</span> Click <strong>Export</strong> — files download to your computer</li>
+        </ul>
+      </div>
+
+      <div class="howto-card">
+        <span class="howto-emoji">📽️</span>
+        <h3>Watch a Video with Overlays</h3>
+        <p>Watch any processed video with colored outlines around each pigeon.</p>
+        <ul class="howto-steps">
+          <li><span class="n">1</span> Click <strong>Videos</strong> in the left sidebar</li>
+          <li><span class="n">2</span> Find your video and click <strong>Watch ▶</strong></li>
+          <li><span class="n">3</span> Use the slider at the bottom to scrub through frames</li>
+          <li><span class="n">4</span> Press <strong>← →</strong> arrow keys to step frame by frame</li>
+          <li><span class="n">5</span> The pigeon cards below the video show who is where</li>
+        </ul>
+      </div>
+
+      <div class="howto-card">
+        <span class="howto-emoji">🏋️</span>
+        <h3>Train a Behavior Model</h3>
+        <p>Teach PigeonLab to recognize specific behaviors like feeding or preening.</p>
+        <ul class="howto-steps">
+          <li><span class="n">1</span> Click <strong>Training</strong> in the left sidebar</li>
+          <li><span class="n">2</span> Go to <strong>Label Clips</strong> and label at least 20 clips per behavior</li>
+          <li><span class="n">3</span> Once ready, click <strong>Train Model</strong></li>
+          <li><span class="n">4</span> Configure epochs and backbone, then click <strong>Launch Training</strong></li>
+          <li><span class="n">5</span> When done, click <strong>Set as Active</strong> to use the new model</li>
+        </ul>
+      </div>
+
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- SECTION 11: TROUBLESHOOTING -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div class="section" id="trouble">
+    <span class="section-label">Step 11</span>
+    <h2>Troubleshooting</h2>
+    <p class="section-desc">Something not working? Find your problem below and follow the fix.</p>
+
+    <table class="trouble-table">
+      <thead>
+        <tr>
+          <th>What you see</th>
+          <th>What it means &amp; how to fix it</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>python is not recognized</td>
+          <td>Python wasn't added to PATH during installation. Uninstall Python and reinstall it, making sure to check "Add Python to PATH" on the first screen.</td>
+        </tr>
+        <tr>
+          <td>npm is not recognized</td>
+          <td>Node.js didn't install correctly. Close Command Prompt, reopen it, and try again. If still broken, reinstall Node.js.</td>
+        </tr>
+        <tr>
+          <td>torch.cuda.is_available() returns False</td>
+          <td>PyTorch can't find your GPU. Make sure CUDA 12.6 is installed and your NVIDIA drivers are up to date. Then reinstall PyTorch using the command in Step 6.</td>
+        </tr>
+        <tr>
+          <td>Browser shows "This site can't be reached"</td>
+          <td>PigeonLab isn't running yet. Make sure both Command Prompt windows are open and running (the backend and frontend). Check that you see "Application startup complete" in the backend window.</td>
+        </tr>
+        <tr>
+          <td>Access denied when downloading SAM 3</td>
+          <td>Your HuggingFace access request hasn't been approved yet, or you haven't logged in. Run <code>huggingface-cli login</code> again and check your email for an approval message.</td>
+        </tr>
+        <tr>
+          <td>Processing a video stays stuck at "Queued"</td>
+          <td>SAM 3 model files may not be downloaded. Run <code>python scripts\setup_check.py</code> to check. If the checkpoint shows ❌, re-run <code>python scripts\download_sam3.py</code>.</td>
+        </tr>
+        <tr>
+          <td>The page is blank or shows an error</td>
+          <td>Open the browser's developer tools (press F12), click Console, and look for red error messages. The most common cause is the backend not running — check the first Command Prompt window.</td>
+        </tr>
+        <tr>
+          <td>ModuleNotFoundError for any package</td>
+          <td>A package didn't install properly. Run <code>pip install -r requirements.txt</code> again from the <code>pigeonlab\backend</code> folder.</td>
+        </tr>
+        <tr>
+          <td>Heatmap or charts are blank</td>
+          <td>No data has been processed yet, or you need to load sample data. Run <code>python seed_data.py</code> from the backend folder to load example data.</td>
+        </tr>
+        <tr>
+          <td>nvidia-smi is not recognized</td>
+          <td>Your NVIDIA drivers aren't installed or need updating. Download the latest driver from nvidia.com/drivers and restart your computer.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <hr class="divider">
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- SECTION 12: DAILY STARTUP -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div class="section" id="daily">
+    <span class="section-label">Step 12</span>
+    <h2>Daily Startup</h2>
+    <p class="section-desc">Once PigeonLab is set up, starting it each day is quick and easy.</p>
+
+    <div class="callout tip" style="margin-bottom:28px;">
+      <span class="callout-icon">⭐</span>
+      <div class="callout-body">
+        <strong>The fastest way to start PigeonLab</strong>
+        Double-click <code>start.bat</code> in your pigeonlab folder. That's it. Wait 10 seconds, then go to <strong>http://localhost:5173</strong> in your browser.
+      </div>
+    </div>
+
+    <div class="callout info">
+      <span class="callout-icon">🔖</span>
+      <div class="callout-body">
+        <strong>Pro tip: bookmark the URL</strong>
+        In your browser, bookmark <code>http://localhost:5173</code> as "PigeonLab". Every morning you can just double-click start.bat, then click your bookmark.
+      </div>
+    </div>
+
+    <div class="callout warning" style="margin-top:16px;">
+      <span class="callout-icon">🛑</span>
+      <div class="callout-body">
+        <strong>To stop PigeonLab</strong>
+        Close both black Command Prompt windows. Your data is automatically saved to the database — you won't lose anything.
+      </div>
+    </div>
+
+    <!-- Quick Reference URLs -->
+    <div style="margin-top:28px;">
+      <h3 style="font-size:1rem; font-weight:600; margin-bottom:14px; color:var(--ink);">Quick Reference — URLs when PigeonLab is running</h3>
+      <div style="display:flex; flex-direction:column; gap:8px;">
+        <a href="http://localhost:5173" class="url-card" target="_blank">
+          <span class="url-icon">🏠</span>
+          <div class="url-text">
+            <strong>PigeonLab Main Interface</strong>
+            <span>http://localhost:5173</span>
+          </div>
+        </a>
+        <a href="http://localhost:8000/docs" class="url-card" target="_blank">
+          <span class="url-icon">📖</span>
+          <div class="url-text">
+            <strong>API Documentation (for advanced users)</strong>
+            <span>http://localhost:8000/docs</span>
+          </div>
+        </a>
+        <a href="http://localhost:8000/api/health" class="url-card" target="_blank">
+          <span class="url-icon">💚</span>
+          <div class="url-text">
+            <strong>Backend Health Check — confirms the server is running</strong>
+            <span>http://localhost:8000/api/health</span>
+          </div>
+        </a>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- FOOTER -->
+<div class="footer">
+  <strong>🕊️ PigeonLab</strong><br>
+  Pigeon behavioral research platform · Windows 11 · NVIDIA GPU<br><br>
+  Built with FastAPI · React 19 · SAM 3 · TailwindCSS · SQLite<br>
+  <span style="opacity:0.5; font-size:0.78rem; margin-top:8px; display:block;">Keep both Command Prompt windows open while PigeonLab is running. Your data is saved automatically.</span>
+</div>
+
+<script>
+  // Accordion toggle
+  function toggleStep(header) {
+    const step = header.parentElement;
+    step.classList.toggle('open');
+  }
+
+  // Copy button
+  function copyCode(btn) {
+    const pre = btn.closest('.code-block').querySelector('pre');
+    const text = pre.innerText;
+    navigator.clipboard.writeText(text).then(() => {
+      btn.textContent = '✓ Copied!';
+      btn.classList.add('copied');
+      setTimeout(() => {
+        btn.textContent = 'Copy';
+        btn.classList.remove('copied');
+      }, 2000);
+    });
+  }
+
+  // Reading progress bar
+  window.addEventListener('scroll', () => {
+    const doc = document.documentElement;
+    const scrolled = (doc.scrollTop) / (doc.scrollHeight - doc.clientHeight) * 100;
+    document.getElementById('progressFill').style.width = scrolled + '%';
+  });
+
+  // Open first step of each section by default
+  document.querySelectorAll('.steps').forEach(steps => {
+    const first = steps.querySelector('.step');
+    if (first) first.classList.add('open');
+  });
+</script>
+</body>
+</html>
