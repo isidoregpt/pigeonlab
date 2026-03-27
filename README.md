@@ -1,3 +1,7 @@
+> ⚠️ This software is free for academic and research use. Commercial use,
+> including selling derivative works, is prohibited without a license.
+> See [LICENSE](./LICENSE) for details.
+
 # PigeonLab
 
 A full-stack web application for pigeon behavioral tracking from video. Upload videos, track pigeon positions and identities, review QC flags, visualize zone heatmaps and social networks, and train behavior classification models.
