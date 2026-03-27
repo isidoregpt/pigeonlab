@@ -352,11 +352,12 @@ class VideoProcessor:
 
             except Exception:
                 logger.exception("Processing failed for video %d", video_id)
-                if session_id is not None:
-                    self._sam3.close_video_session(session_id)
                 await self._update_status(conn, video_id, "failed")
                 await conn.commit()
                 raise
+            finally:
+                if session_id is not None:
+                    self._sam3.close_video_session(session_id)
 
     # ------------------------------------------------------------------
     # Private helpers
