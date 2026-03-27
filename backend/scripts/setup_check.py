@@ -8,6 +8,7 @@ and configured before starting PigeonLab::
 Each check prints a pass/fail indicator and a short status message.
 """
 
+import glob
 import subprocess
 import sys
 from pathlib import Path
@@ -89,24 +90,54 @@ def run_checks() -> None:
         check("PyTorch >= 2.7", False, "Not installed",
               "pip install torch torchvision")
 
-    # 6. SAM 3 installed
+    # 6a. SAM 3 native package
+    sam3_native = False
     try:
         from sam3.model_builder import build_sam3_image_model  # noqa: F401
-        check("SAM 3 installed", True, "sam3 package found")
+        check("SAM 3 (native package)", True, "sam3 package found")
+        sam3_native = True
     except ImportError:
-        check("SAM 3 installed", False, "Not installed",
-              "git clone https://github.com/facebookresearch/sam3.git && "
-              "cd sam3 && pip install -e . && cd ..")
+        check("SAM 3 (native package)", False, "Not installed",
+              "Install: git clone https://github.com/facebookresearch/sam3.git "
+              "&& cd sam3 && pip install -e .")
 
-    # 7. SAM 3 checkpoint exists
-    ckpt = PROJECT_ROOT / "data" / "models" / "sam3" / "sam3_hiera_large.pt"
+    # 6b. SAM 3 via transformers
+    sam3_transformers = False
+    try:
+        from transformers import Sam3Model  # noqa: F401
+        check("SAM 3 (via transformers)", True, "Sam3Model found in transformers")
+        sam3_transformers = True
+    except ImportError:
+        check("SAM 3 (via transformers)", False, "Not available",
+              "Install: pip install transformers accelerate")
+
+    # 6 combined status
+    if sam3_native or sam3_transformers:
+        backend = "native" if sam3_native else "transformers"
+        print(f"  \u2705 SAM 3 available (using {backend})")
+    else:
+        print("  \u274c SAM 3 not available — install at least one option above")
+
+    # 7a. SAM 3 checkpoint exists
+    model_dir_sam3 = PROJECT_ROOT / "data" / "models" / "sam3"
+    checkpoint_files = (
+        glob.glob(str(model_dir_sam3 / "*.pt"))
+        + glob.glob(str(model_dir_sam3 / "*.safetensors"))
+    )
     check(
         "SAM 3 checkpoint",
-        ckpt.exists(),
-        str(ckpt) if ckpt.exists() else "Not found",
-        "python backend/scripts/download_sam3.py "
-        "(filename may vary — check huggingface.co/facebook/sam3)",
+        len(checkpoint_files) > 0,
+        f"{len(checkpoint_files)} file(s) found" if checkpoint_files else "Not found",
+        "python backend/scripts/download_sam3.py",
     )
+
+    # 7b. transformers library
+    try:
+        import transformers
+        check("transformers library", True, f"transformers {transformers.__version__}")
+    except ImportError:
+        check("transformers library", False, "Not installed",
+              "pip install transformers accelerate")
 
     # 8. aiosqlite installed
     try:
