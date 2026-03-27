@@ -42,14 +42,24 @@ pigeonlab/
 │   ├── main.py              # FastAPI app, lifespan, health check
 │   ├── database.py          # SQLite schema & helpers
 │   ├── seed_data.py         # Demo data seeder
-│   └── routers/
-│       ├── videos.py        # Video CRUD, frames, features, edits
-│       ├── pigeons.py       # Pigeon CRUD, behaviors, identity
-│       ├── insights.py      # Heatmaps, behaviors, pairwise, droppings
-│       ├── review.py        # Identity confirmation, QC flags
-│       ├── training.py      # Clips, labeling, model training
-│       ├── export.py        # CSV/PDF export
-│       └── stats.py         # Dashboard stats, attention items
+│   ├── routers/
+│   │   ├── videos.py        # Video CRUD, frames, features, edits
+│   │   ├── pigeons.py       # Pigeon CRUD, behaviors, identity
+│   │   ├── insights.py      # Heatmaps, behaviors, pairwise, droppings
+│   │   ├── review.py        # Identity confirmation, QC flags
+│   │   ├── training.py      # Clips, labeling, model training
+│   │   ├── export.py        # CSV/PDF export
+│   │   └── stats.py         # Dashboard stats, attention items
+│   ├── services/
+│   │   ├── sam3.py          # SAM3 wrapper (dual install paths)
+│   │   ├── video_processor.py  # Processing pipeline orchestrator
+│   │   ├── frame_extractor.py  # OpenCV frame extraction
+│   │   ├── tracker.py       # Multi-object tracker
+│   │   ├── feature_extractor.py  # Spatial features
+│   │   └── qc_rules.py      # Automated QC checks
+│   └── scripts/
+│       ├── download_sam3.py # SAM3 checkpoint downloader
+│       └── setup_check.py   # 16-point environment diagnostic
 ├── frontend/
 │   ├── src/
 │   │   ├── pages/           # Home, Videos, Pigeons, Insights, Review, Training, LabSetup
