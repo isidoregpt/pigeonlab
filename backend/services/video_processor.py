@@ -103,7 +103,14 @@ class VideoProcessor:
                     logger.info("Loading SAM 3 model …")
                     self._sam3 = get_sam3(self._sam3_checkpoint)
 
-                # 4. Run detection + tracking
+                # 4. Determine frame shape from first frame
+                first_frame = frame_extractor.get_frame(video_id, 0)
+                frame_shape = (
+                    first_frame.shape[:2] if first_frame is not None
+                    else (720, 1280)
+                )
+
+                # 5. Run detection + tracking
                 tracker = PigeonTracker()
                 feature_extractor = FeatureExtractor()
                 qc_engine = QCRulesEngine(expected_pigeon_count=expected_pigeon_count)
@@ -111,8 +118,8 @@ class VideoProcessor:
                 all_features: list[dict] = []
                 all_pairwise: list[dict] = []
                 all_qc_flags: list[dict] = []
-                prev_tracked: list[dict] | None = None
                 prev_features: list[dict] | None = None
+                session_id: str | None = None
 
                 if use_video_api:
                     session_id = self._sam3.start_video_session(video_path)
@@ -121,65 +128,108 @@ class VideoProcessor:
                         session_id, video_id,
                     )
 
-                for frame_num in range(total_frames):
-                    frame_bgr = frame_extractor.get_frame(video_id, frame_num)
-                    if frame_bgr is None:
-                        continue
-
-                    # Detection
-                    if use_video_api:
-                        detections = self._sam3.predict_video_frame(
-                            session_id, frame_num, text_prompt,
+                    try:
+                        logger.info(
+                            "Running SAM 3 video propagation on %d frames…",
+                            total_frames,
                         )
-                    else:
+                        all_detections = self._sam3.propagate_video(
+                            session_id=session_id,
+                            text_prompt=text_prompt,
+                            max_frames=total_frames,
+                        )
+                        logger.info(
+                            "SAM 3 returned detections for %d frames",
+                            len(all_detections),
+                        )
+
+                        for frame_num in range(total_frames):
+                            detections = all_detections.get(frame_num, [])
+                            tracked = tracker.update(frame_num, detections)
+                            features = feature_extractor.compute_features(
+                                frame_idx=frame_num,
+                                video_id=video_id,
+                                tracked_detections=tracked,
+                                frame_shape=frame_shape,
+                                prev_detections=all_detections.get(frame_num - 1),
+                                fps=fps,
+                            )
+                            pairwise = feature_extractor.compute_pairwise(
+                                frame_idx=frame_num,
+                                video_id=video_id,
+                                features=features,
+                            )
+
+                            frame_flags = qc_engine.check_frame(
+                                frame_num, features, prev_features,
+                            )
+                            qc_rows = qc_engine.flags_to_db_rows(frame_flags, video_id)
+
+                            all_features.extend(features)
+                            all_pairwise.extend(pairwise)
+                            all_qc_flags.extend(qc_rows)
+                            prev_features = features
+
+                        self._sam3.close_video_session(session_id)
+                        session_id = None
+
+                    except Exception as exc:
+                        logger.warning(
+                            "Video propagation failed (%s), falling back to "
+                            "per-frame prediction",
+                            exc,
+                        )
+                        self._sam3.close_video_session(session_id)
+                        session_id = None
+                        use_video_api = False  # fall through to per-frame below
+
+                if not use_video_api:
+                    for frame_num in range(total_frames):
+                        frame_bgr = frame_extractor.get_frame(video_id, frame_num)
+                        if frame_bgr is None:
+                            continue
+
                         detections = self._sam3.predict_frame(
                             frame_bgr, text_prompt,
                         )
+                        tracked = tracker.update(frame_num, detections)
 
-                    # Tracking
-                    tracked = tracker.update(frame_num, detections)
-
-                    # Features
-                    frame_shape = (frame_bgr.shape[0], frame_bgr.shape[1])
-                    features = feature_extractor.compute_features(
-                        frame_idx=frame_num,
-                        video_id=video_id,
-                        tracked_detections=tracked,
-                        frame_shape=frame_shape,
-                        prev_detections=prev_tracked,
-                        fps=fps,
-                    )
-                    pairwise = feature_extractor.compute_pairwise(
-                        frame_idx=frame_num,
-                        video_id=video_id,
-                        features=features,
-                    )
-
-                    # QC per-frame
-                    frame_flags = qc_engine.check_frame(
-                        frame_num, features, prev_features,
-                    )
-                    qc_rows = qc_engine.flags_to_db_rows(frame_flags, video_id)
-
-                    all_features.extend(features)
-                    all_pairwise.extend(pairwise)
-                    all_qc_flags.extend(qc_rows)
-
-                    prev_tracked = tracked
-                    prev_features = features
-
-                    if frame_num % 100 == 0:
-                        logger.debug(
-                            "Video %d: processed frame %d/%d",
-                            video_id, frame_num, total_frames,
+                        features = feature_extractor.compute_features(
+                            frame_idx=frame_num,
+                            video_id=video_id,
+                            tracked_detections=tracked,
+                            frame_shape=frame_shape,
+                            prev_detections=None,
+                            fps=fps,
                         )
+                        pairwise = feature_extractor.compute_pairwise(
+                            frame_idx=frame_num,
+                            video_id=video_id,
+                            features=features,
+                        )
+
+                        frame_flags = qc_engine.check_frame(
+                            frame_num, features, prev_features,
+                        )
+                        qc_rows = qc_engine.flags_to_db_rows(frame_flags, video_id)
+
+                        all_features.extend(features)
+                        all_pairwise.extend(pairwise)
+                        all_qc_flags.extend(qc_rows)
+                        prev_features = features
+
+                        if frame_num % 100 == 0:
+                            logger.debug(
+                                "Video %d: processed frame %d/%d",
+                                video_id, frame_num, total_frames,
+                            )
 
                 logger.info(
                     "Video %d: detection complete — %d features, %d pairwise rows",
                     video_id, len(all_features), len(all_pairwise),
                 )
 
-                # 5. Batch insert features
+                # 6. Batch insert features
                 if all_features:
                     await conn.executemany(
                         """INSERT INTO features (
@@ -205,7 +255,7 @@ class VideoProcessor:
                     )
                     await conn.commit()
 
-                # 6. Batch insert pairwise
+                # 7. Batch insert pairwise
                 if all_pairwise:
                     await conn.executemany(
                         """INSERT INTO pairwise (
@@ -224,7 +274,7 @@ class VideoProcessor:
                     )
                     await conn.commit()
 
-                # 7. Video-level QC + batch insert
+                # 8. Video-level QC + batch insert
                 video_qc = qc_engine.check_video(all_features)
                 video_qc_rows = qc_engine.flags_to_db_rows(video_qc, video_id)
                 all_qc_flags.extend(video_qc_rows)
@@ -246,7 +296,7 @@ class VideoProcessor:
                     )
                     await conn.commit()
 
-                # 8. Video assignments
+                # 9. Video assignments
                 unique_track_ids: set[int] = set()
                 for f in all_features:
                     try:
@@ -277,7 +327,7 @@ class VideoProcessor:
                     )
                 await conn.commit()
 
-                # 9. Mark completed
+                # 10. Mark completed
                 await conn.execute(
                     """UPDATE videos
                        SET processing_status = 'completed',
@@ -288,7 +338,7 @@ class VideoProcessor:
                 )
                 await conn.commit()
 
-                # 10. Return summary
+                # 11. Return summary
                 result = {
                     "video_id": video_id,
                     "status": "completed",
@@ -302,6 +352,8 @@ class VideoProcessor:
 
             except Exception:
                 logger.exception("Processing failed for video %d", video_id)
+                if session_id is not None:
+                    self._sam3.close_video_session(session_id)
                 await self._update_status(conn, video_id, "failed")
                 await conn.commit()
                 raise
