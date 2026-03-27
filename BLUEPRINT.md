@@ -288,9 +288,18 @@ PigeonLab is a full-stack web application for pigeon behavioral research. Resear
 | `main.py` | FastAPI app entry point | `lifespan()` — creates dirs + init DB; mounts 7 routers + 1 direct route; CORS config; health check |
 | `database.py` | SQLite schema and connection management | `init_db()` — creates 16 tables + indexes; `get_connection()` — returns sqlite3.Connection with WAL + FK; `get_db_path()` — returns path string for aiosqlite |
 | `seed_data.py` | Demo data generator | `seed()` — inserts 4 pigeons, 2 videos, 8 assignments, 2 QC flags, 80 features, 8 behaviors, 8 pairwise records |
-| `requirements.txt` | Python dependencies | fastapi, uvicorn, python-multipart, aiofiles, pillow, numpy, opencv-python, torch, torchvision |
+| `requirements.txt` | Python dependencies | fastapi, uvicorn, python-multipart, aiofiles, pillow, numpy, opencv-python, torch, torchvision, aiosqlite, huggingface_hub, supervision, einops (+ SAM3 editable install comment) |
 | `models/__init__.py` | Empty — placeholder for future ML model code |
 | `services/__init__.py` | Empty — placeholder for future service layer |
+| `services/sam3.py` | SAM3 wrapper with dual install paths (native + transformers), video session management, propagate_video |
+| `services/video_processor.py` | Async video processing orchestrator, runs full pipeline: extraction → SAM3 → tracking → features → QC |
+| `services/frame_extractor.py` | OpenCV frame extraction to JPEG |
+| `services/tracker.py` | Greedy centroid-distance multi-object tracker |
+| `services/feature_extractor.py` | Spatial features + pairwise distances |
+| `services/qc_rules.py` | Automated QC rule checks |
+| `scripts/download_sam3.py` | HuggingFace snapshot_download for SAM3 checkpoint with GatedRepoError handling |
+| `scripts/setup_check.py` | 16-point environment diagnostic script |
+| `scripts/__init__.py` | Package docstring |
 | `routers/__init__.py` | Empty — makes routers a package |
 
 ### Backend Routers (`backend/routers/`)
@@ -688,8 +697,6 @@ benchmark_results (standalone)
 | GET | `/{video_id}/frame/{frame_num}` | | JPEG image | Serve extracted frame |
 | PUT | `/{video_id}/review` | `{review_status, reviewer}` | `{video_id, review_status, reviewer}` | Update review status |
 
-**⚠️ KNOWN GAP:** Frontend calls `GET /{video_id}/features?frame_idx=N` and `GET /{video_id}/track-edits` but these endpoints DO NOT EXIST in videos.py. VideoDetail page silently fails on these.
-
 ### Pigeons Router (`/api/pigeons`)
 
 | Method | Path | Request | Response | Purpose |
@@ -982,7 +989,7 @@ The `backend/seed_data.py` script creates the following sample data for developm
 
 ## 8. Data Flow
 
-### Video Processing Flow (Conceptual — not yet implemented in code)
+### Video Processing Flow
 
 ```
 User adds video paths → POST /api/videos/process
@@ -990,7 +997,7 @@ User adds video paths → POST /api/videos/process
                               ▼
                      Videos inserted with processing_status='queued'
                               │
-                              ▼ (future: background worker)
+                              ▼ (implemented in backend/services/video_processor.py)
                      SAM3 detection → masks per frame
                               │
                               ▼
@@ -1113,10 +1120,7 @@ Frontend Component
 
 | ID | Description | Files Involved | Impact |
 |----|-------------|---------------|--------|
-| BUG-001 | **Export URL double-prefix.** `getExportDownloadUrl()` adds `/api/export/download/` but `data.download_url` from backend already contains this path. Results in 404 on download. | `frontend/src/api/insights.ts` (line: `getExportDownloadUrl`), `frontend/src/pages/Insights.tsx` (export mutation onSuccess) | CSV export download fails |
-| BUG-002 | **Missing video features endpoint.** Frontend calls `GET /api/videos/{id}/features?frame_idx=N` but endpoint doesn't exist. | `frontend/src/api/videos.ts` (`getVideoFeatures`), `backend/routers/videos.py` (missing) | VideoDetail shows no per-frame pigeon data |
-| BUG-003 | **Missing video track-edits endpoint.** Frontend calls `GET /api/videos/{id}/track-edits` but endpoint doesn't exist. | `frontend/src/api/videos.ts` (`getVideoTrackEdits`), `backend/routers/videos.py` (missing) | VideoDetail edit history always empty |
-| BUG-004 | **Review queue links to video_id=0.** Identity review section in ReviewQueue navigates to `/review?type=identity&video_id=0` which won't match any video. | `frontend/src/pages/Review.tsx` (ReviewQueue identity section action) | Identity review flow can't start from queue |
+| | (All critical bugs BUG-001 through BUG-004 have been resolved — see Error Catalog at top of file) | | |
 
 ### Missing Features (Spec'd but Not Built)
 
