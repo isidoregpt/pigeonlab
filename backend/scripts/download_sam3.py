@@ -1,25 +1,29 @@
-"""Download the SAM 3 model files from Hugging Face.
+"""Download SAM 3 / SAM 3.1 model files from Hugging Face.
 
 Prerequisites:
-    1. Request access at https://huggingface.co/facebook/sam3
+    1. Request access on the relevant Hugging Face model page.
     2. Run ``hf auth login`` to authenticate with your Hugging Face token.
-    3. Then run this script::
+    3. Run, for SAM3.1::
 
-        python backend/scripts/download_sam3.py
+        python backend/scripts/download_sam3.py --version sam3.1
 
-The model files are saved to ``data/models/sam3/`` in the project root.
+The model files are saved to ``data/models/{version}/`` in the project root.
 An active internet connection is required.
 """
 
+from __future__ import annotations
+
+import argparse
+import os
 from pathlib import Path
 
-SAM3_REPO_ID = "facebook/sam3"
+REPOS = {
+    "sam3": "facebook/sam3",
+    "sam3.1": "facebook/sam3.1",
+}
 
-# Resolve paths relative to the project root (two levels up from this script)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-MODEL_DIR = PROJECT_ROOT / "data" / "models" / "sam3"
 
-# Import GatedRepoError if available for specific access-denied handling
 try:
     from huggingface_hub.errors import GatedRepoError
 
@@ -28,16 +32,20 @@ except ImportError:
     HF_GATED_ERROR = Exception
 
 
-def download() -> None:
-    """Download the SAM 3 model files to *MODEL_DIR*."""
+def download(version: str = "sam3.1") -> None:
+    """Download the selected SAM model files to data/models/{version}."""
+    repo_id = REPOS[version]
+    model_dir = PROJECT_ROOT / "data" / "models" / version
+
     print(
-        "=== PigeonLab — SAM 3 Model Downloader ===\n"
-        f"Repository : {SAM3_REPO_ID}\n"
-        f"Destination: {MODEL_DIR}\n"
+        "=== PigeonLab - SAM Model Downloader ===\n"
+        f"Version    : {version}\n"
+        f"Repository : {repo_id}\n"
+        f"Destination: {model_dir}\n"
     )
 
     try:
-        from huggingface_hub import snapshot_download  # noqa: F811
+        from huggingface_hub import snapshot_download
     except ImportError:
         print(
             "\nError: the 'huggingface_hub' package is not installed.\n"
@@ -46,36 +54,46 @@ def download() -> None:
         )
         raise SystemExit(1)
 
-    MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    model_dir.mkdir(parents=True, exist_ok=True)
 
     print(
-        "Downloading SAM 3 model files from Hugging Face (facebook/sam3).\n"
-        "This is approximately 3-4 GB total including all model weights.\n"
+        f"Downloading {version} model files from Hugging Face.\n"
+        "This may be several GB including model weights.\n"
         "Please be patient..."
     )
 
     snapshot_download(
-        repo_id=SAM3_REPO_ID,
-        local_dir=str(MODEL_DIR),
+        repo_id=repo_id,
+        local_dir=str(model_dir),
         ignore_patterns=["*.md", "*.txt", "assets/*"],
     )
 
-    print(
-        f"\nSAM 3 downloaded to {MODEL_DIR}.\n"
-        "You can now start PigeonLab."
-    )
+    if version == "sam3.1":
+        candidates = sorted(model_dir.glob("*.pt"))
+        target = model_dir / "sam3.1_multiplex.pt"
+        if candidates and not target.exists():
+            try:
+                os.replace(candidates[0], target)
+            except OSError:
+                pass
+
+    print(f"\n{version} downloaded to {model_dir}.\nYou can now start PigeonLab.")
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Download SAM model files for PigeonLab")
+    parser.add_argument("--version", choices=sorted(REPOS), default="sam3.1")
+    args = parser.parse_args()
+
     try:
-        download()
+        download(args.version)
     except KeyboardInterrupt:
         print("\n\nDownload cancelled.")
     except HF_GATED_ERROR:
         print(
             "\nAccess denied. You need to:\n"
-            "  1. Go to https://huggingface.co/facebook/sam3\n"
-            "  2. Click 'Request access' and wait for approval email\n"
+            f"  1. Go to https://huggingface.co/{REPOS[args.version]}\n"
+            "  2. Click 'Request access' and wait for approval\n"
             "  3. Run: hf auth login\n"
             "  4. Then run this script again"
         )
@@ -84,7 +102,7 @@ if __name__ == "__main__":
         print(
             f"\nDownload failed: {exc}\n\n"
             "Please check your internet connection and try again.\n"
-            "If the problem persists, you can download the files manually from:\n"
-            f"  https://huggingface.co/{SAM3_REPO_ID}"
+            "If the problem persists, download the files manually from:\n"
+            f"  https://huggingface.co/{REPOS[args.version]}"
         )
         raise SystemExit(1)

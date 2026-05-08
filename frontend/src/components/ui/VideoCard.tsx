@@ -27,6 +27,7 @@ export default function VideoCard({ video }: VideoCardProps) {
   });
 
   const progress = statusData?.progress ?? 0;
+  const processingError = statusData?.error ?? video.processing_error;
 
   return (
     <div className="bg-surface border border-border rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden">
@@ -85,6 +86,11 @@ export default function VideoCard({ video }: VideoCardProps) {
         {isProcessing && (
           <span className="px-3 py-1.5 text-[12px] text-text-secondary/60">
             Processing... {Math.round(progress)}%
+          </span>
+        )}
+        {video.processing_status === "failed" && processingError && (
+          <span className="px-3 py-1.5 text-[12px] text-error truncate" title={processingError}>
+            {processingError}
           </span>
         )}
       </div>

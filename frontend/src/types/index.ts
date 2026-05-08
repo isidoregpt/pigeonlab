@@ -18,6 +18,7 @@ export interface Video {
   processed_at: string | null;
   review_status: ReviewStatus;
   processing_status: ProcessingStatus;
+  processing_error: string | null;
   model_version: string | null;
   config_hash: string | null;
   notes: string | null;
@@ -45,6 +46,7 @@ export interface VideoAssignment {
   assigned_at: string | null;
   reviewed_at: string | null;
   reviewed_by: string | null;
+  sample_frame_idx?: number | null;
 }
 
 export interface Feature {
@@ -122,6 +124,22 @@ export interface QCFlag {
   reason: string | null;
   review_status: QCFlagStatus;
   resolved_action: string | null;
+}
+
+export interface AIObservation {
+  id: number;
+  video_id: number;
+  frame_idx: number | null;
+  pigeon_id: string | null;
+  observation_type: string;
+  label: string | null;
+  confidence: number | null;
+  zone: string | null;
+  bbox_json: string | null;
+  source_model: string | null;
+  review_status: ReviewStatus;
+  details: string | null;
+  created_at: string | null;
 }
 
 export interface ModelRegistryEntry {

@@ -208,6 +208,14 @@ async def start_training(payload: TrainPayload):
 
     Does not implement actual PyTorch training — that is a future phase.
     """
+    raise HTTPException(
+        status_code=501,
+        detail=(
+            "Behavior model training is not implemented yet. Clip labeling and "
+            "readiness checks work, but no PyTorch training job is run."
+        ),
+    )
+
     if payload.behavior_classes is not None and len(payload.behavior_classes) == 0:
         raise HTTPException(
             status_code=400,
@@ -374,6 +382,14 @@ class ReinferPayload(BaseModel):
 
 @router.post("/reinfer")
 async def reinfer_videos(payload: ReinferPayload):
+    raise HTTPException(
+        status_code=501,
+        detail=(
+            "Behavior re-inference is not implemented yet. SAM3 video processing "
+            "runs during Add Videos; behavior classifier re-runs are a future step."
+        ),
+    )
+
     """Count eligible videos and return a job stub.
 
     Does not run actual inference — that is a future phase.

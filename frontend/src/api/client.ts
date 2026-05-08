@@ -19,7 +19,25 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     let message = `${res.status} ${res.statusText}`;
     try {
       const body = await res.json();
-      if (body.detail) message = body.detail;
+      if (typeof body.detail === "string") {
+        message = body.detail;
+      } else if (body.detail?.message) {
+        const parts = [body.detail.message];
+        if (Array.isArray(body.detail.errors) && body.detail.errors.length > 0) {
+          parts.push(
+            body.detail.errors
+              .map((item: unknown) =>
+                typeof item === "string"
+                  ? item
+                  : item && typeof item === "object" && "error" in item
+                    ? String((item as { error: unknown }).error)
+                    : JSON.stringify(item),
+              )
+              .join(" "),
+          );
+        }
+        message = parts.join(" ");
+      }
     } catch {
       // use default message
     }

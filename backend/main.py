@@ -1,7 +1,17 @@
 import os
+import logging
 import time
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
+
+from env_loader import load_env_file
+
+load_env_file()
+
+from logging_config import configure_logging
+
+configure_logging()
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,12 +19,24 @@ from fastapi.middleware.cors import CORSMiddleware
 from database import init_db, get_db, DB_PATH
 from routers import videos, pigeons, insights, review, training, export, stats, settings
 from routers.stats import recent_activity as _activity_handler
+from services.sam3 import get_sam3_status
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DATA_DIRS = ["data", "data/videos", "data/clips", "data/models", "data/exports", "data/frames"]
+DATA_DIRS = [
+    "data",
+    "data/videos",
+    "data/videos/inbox",
+    "data/videos/output",
+    "data/videos/archive",
+    "data/clips",
+    "data/models",
+    "data/exports",
+    "data/frames",
+]
 
 APP_VERSION = "0.1.0"
 _start_time: float = 0.0
+logger = logging.getLogger("pigeonlab.api")
 
 
 @asynccontextmanager
@@ -48,6 +70,40 @@ app.include_router(settings.router, prefix="/api/settings", tags=["settings"])
 app.get("/api/activity", tags=["stats"])(_activity_handler)
 
 
+@app.middleware("http")
+async def request_logging_middleware(request, call_next):
+    request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
+    start = time.perf_counter()
+    logger.debug(
+        "request.start id=%s method=%s path=%s client=%s",
+        request_id,
+        request.method,
+        request.url.path,
+        request.client.host if request.client else None,
+    )
+    try:
+        response = await call_next(request)
+    except Exception:
+        logger.exception(
+            "request.error id=%s method=%s path=%s",
+            request_id,
+            request.method,
+            request.url.path,
+        )
+        raise
+    duration_ms = round((time.perf_counter() - start) * 1000, 2)
+    response.headers["x-request-id"] = request_id
+    logger.info(
+        "request.end id=%s method=%s path=%s status=%s duration_ms=%.2f",
+        request_id,
+        request.method,
+        request.url.path,
+        response.status_code,
+        duration_ms,
+    )
+    return response
+
+
 @app.get("/api/health", tags=["health"])
 async def health_check():
     db_ok = False
@@ -70,5 +126,6 @@ async def health_check():
             "status": "connected" if db_ok else "error",
             "size_bytes": db_size_bytes,
         },
+        "sam3": get_sam3_status(load_model=False),
         "uptime_seconds": uptime_seconds,
     }

@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Plus, Search, Loader2 } from "lucide-react";
+import { FolderInput, Plus, Search, Loader2 } from "lucide-react";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useDebounce } from "../hooks/useDebounce";
 import { getVideos } from "../api/videos";
@@ -9,6 +9,7 @@ import VideoCard from "../components/ui/VideoCard";
 import LoadingState from "../components/ui/LoadingState";
 import EmptyState from "../components/ui/EmptyState";
 import AddVideosModal from "../components/ui/AddVideosModal";
+import ImportFolderModal from "../components/ui/ImportFolderModal";
 
 const PER_PAGE = 20;
 
@@ -49,6 +50,7 @@ export default function Videos() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
+  const [importModalOpen, setImportModalOpen] = useState(false);
 
   const { data, isLoading, isFetching, isError, refetch } = useQuery({
     queryKey: ["videos", page],
@@ -100,13 +102,22 @@ export default function Videos() {
             <Loader2 size={14} className="animate-spin text-text-secondary" />
           )}
         </div>
-        <button
-          onClick={() => setModalOpen(true)}
-          className="flex items-center gap-1.5 px-4 py-2 bg-accent text-white text-sm font-medium rounded-lg hover:bg-accent/90 transition-colors"
-        >
-          <Plus size={16} strokeWidth={2} />
-          Add Videos
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setImportModalOpen(true)}
+            className="flex items-center gap-1.5 px-4 py-2 border border-border text-text-primary text-sm font-medium rounded-lg hover:bg-bg transition-colors"
+          >
+            <FolderInput size={16} strokeWidth={2} />
+            Import Folder
+          </button>
+          <button
+            onClick={() => setModalOpen(true)}
+            className="flex items-center gap-1.5 px-4 py-2 bg-accent text-white text-sm font-medium rounded-lg hover:bg-accent/90 transition-colors"
+          >
+            <Plus size={16} strokeWidth={2} />
+            Add Videos
+          </button>
+        </div>
       </div>
 
       {/* Search */}
@@ -193,6 +204,14 @@ export default function Videos() {
           onClose={() => setModalOpen(false)}
           onSuccess={() => {
             setModalOpen(false);
+            refetch();
+          }}
+        />
+      )}
+      {importModalOpen && (
+        <ImportFolderModal
+          onClose={() => setImportModalOpen(false)}
+          onSuccess={() => {
             refetch();
           }}
         />

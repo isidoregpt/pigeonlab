@@ -101,6 +101,7 @@ class FeatureExtractor:
             cx = (bbox[0] + bbox[2]) / 2.0
             cy = (bbox[1] + bbox[3]) / 2.0
             track_id = det["track_id"]
+            pigeon_id = det.get("pigeon_id") or f"unknown_{track_id}"
 
             mm_x, mm_y = self._pixel_to_mm(cx, cy, frame_w, frame_h)
 
@@ -140,7 +141,8 @@ class FeatureExtractor:
             results.append({
                 "video_id": video_id,
                 "frame_idx": frame_idx,
-                "pigeon_id": str(track_id),
+                "track_id": track_id,
+                "pigeon_id": str(pigeon_id),
                 "centroid_x": round(cx, 2),
                 "centroid_y": round(cy, 2),
                 "centroid_mm_x": round(mm_x, 2),

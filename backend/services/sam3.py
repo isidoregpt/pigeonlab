@@ -1,52 +1,67 @@
-"""SAM 3 model wrapper for pigeon detection and segmentation.
+"""SAM 3 / SAM 3.1 integration for PigeonLab.
 
-Wraps both the SAM 3 image API (per-frame mask prediction) and the
-video API (full video session tracking with temporal consistency).
-Provides a module-level singleton via :func:`get_sam3`.
-
-Supports two installation paths:
-  - **Native**: ``git clone https://github.com/facebookresearch/sam3.git && pip install -e .``
-  - **Transformers**: ``pip install transformers accelerate``
+The app prefers the official ``facebookresearch/sam3`` package for SAM 3.1,
+because the SAM 3.1 checkpoint uses the Object Multiplex video predictor and
+does not currently have Hugging Face Transformers integration. For the older
+``facebook/sam3`` Transformers path, this wrapper keeps a fallback so existing
+installations still work.
 """
 
 from __future__ import annotations
 
+import json
 import logging
+import os
+import sys
 import uuid
+from collections.abc import Iterable
+from pathlib import Path
+from typing import Any
 
 import numpy as np
-import torch
 from PIL import Image
 
+try:
+    import torch
+
+    TORCH_AVAILABLE = True
+except ImportError:
+    torch = None  # type: ignore[assignment]
+    TORCH_AVAILABLE = False
+
 # ---------------------------------------------------------------------------
-# SAM 3 imports — try native package first, then HuggingFace transformers
+# SAM 3 imports - native package first, Transformers fallback for SAM 3 only.
 # ---------------------------------------------------------------------------
 
-# PATH 1: Native sam3 package (from git clone facebookresearch/sam3)
 SAM3_NATIVE_AVAILABLE = False
 try:
     from sam3.model_builder import build_sam3_image_model  # type: ignore[import-untyped]
-    from sam3.model.sam3_image_processor import Sam3Processor as NativeSam3Processor  # type: ignore[import-untyped]
     from sam3.model_builder import build_sam3_video_predictor  # type: ignore[import-untyped]
+    from sam3.model.sam3_image_processor import Sam3Processor as NativeSam3Processor  # type: ignore[import-untyped]
+
+    try:
+        from sam3.model_builder import build_sam3_predictor  # type: ignore[import-untyped]
+    except ImportError:
+        build_sam3_predictor = None  # type: ignore[assignment]
 
     SAM3_NATIVE_AVAILABLE = True
 except ImportError:
     build_sam3_image_model = None  # type: ignore[assignment,misc]
-    NativeSam3Processor = None  # type: ignore[assignment,misc]
     build_sam3_video_predictor = None  # type: ignore[assignment,misc]
+    build_sam3_predictor = None  # type: ignore[assignment,misc]
+    NativeSam3Processor = None  # type: ignore[assignment,misc]
 
-# PATH 2: HuggingFace transformers (pip install transformers)
 SAM3_TRANSFORMERS_AVAILABLE = False
 try:
-    from transformers import Sam3Processor as HFSam3Processor  # type: ignore[import-untyped]
     from transformers import Sam3Model  # type: ignore[import-untyped]
+    from transformers import Sam3Processor as HFSam3Processor  # type: ignore[import-untyped]
     from transformers import Sam3VideoModel  # type: ignore[import-untyped]
     from transformers import Sam3VideoProcessor as HFSam3VideoProcessor  # type: ignore[import-untyped]
 
     SAM3_TRANSFORMERS_AVAILABLE = True
 except ImportError:
-    HFSam3Processor = None  # type: ignore[assignment,misc]
     Sam3Model = None  # type: ignore[assignment,misc]
+    HFSam3Processor = None  # type: ignore[assignment,misc]
     Sam3VideoModel = None  # type: ignore[assignment,misc]
     HFSam3VideoProcessor = None  # type: ignore[assignment,misc]
 
@@ -54,39 +69,309 @@ SAM3_AVAILABLE: bool = SAM3_NATIVE_AVAILABLE or SAM3_TRANSFORMERS_AVAILABLE
 
 logger = logging.getLogger(__name__)
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+MODEL_ROOT = PROJECT_ROOT / "data" / "models"
+_SAM3_RUNTIME_PATCHES_APPLIED = False
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _cuda_supports_bfloat16() -> bool:
+    if not TORCH_AVAILABLE or not torch.cuda.is_available():
+        return False
+    try:
+        return bool(torch.cuda.is_bf16_supported())
+    except Exception:
+        major, _minor = torch.cuda.get_device_capability(0)
+        return major >= 8
+
+
+def _cuda_dtype():
+    if not TORCH_AVAILABLE:
+        return None
+    requested = os.getenv("PIGEONLAB_TORCH_DTYPE", "auto").strip().lower()
+    if requested in {"float16", "fp16", "half"}:
+        return torch.float16
+    if requested in {"bfloat16", "bf16"}:
+        return torch.bfloat16
+    if requested in {"float32", "fp32"}:
+        return torch.float32
+    return torch.bfloat16 if _cuda_supports_bfloat16() else torch.float16
+
+
+def _is_windows() -> bool:
+    return sys.platform.startswith("win")
+
+
+def _as_backend_list(backends: Any) -> list[Any]:
+    if isinstance(backends, Iterable) and not isinstance(backends, (str, bytes)):
+        return list(backends)
+    return [backends]
+
+
+def _apply_sam3_runtime_patches() -> None:
+    """Apply narrow compatibility patches for the native SAM3.1 Windows stack.
+
+    The official SAM3.1 code path has two Windows-specific rough edges observed
+    on RTX workstation installs:
+    - the base predictor forwards ``offload_state_to_cpu`` to the multiplex
+      tracker even though that tracker's ``init_state`` does not accept it.
+    - parts of the model request FlashAttention-only SDPA. Windows PyTorch
+      wheels commonly lack FlashAttention, so we append safe fallback kernels.
+    """
+
+    global _SAM3_RUNTIME_PATCHES_APPLIED
+    if _SAM3_RUNTIME_PATCHES_APPLIED:
+        return
+
+    patches_enabled = _env_bool("PIGEONLAB_SAM3_ENABLE_WINDOWS_PATCHES", _is_windows())
+    if not patches_enabled or not TORCH_AVAILABLE:
+        _SAM3_RUNTIME_PATCHES_APPLIED = True
+        return
+
+    try:
+        from sam3.model.sam3_multiplex_tracking import (  # type: ignore[import-untyped]
+            Sam3MultiplexTrackingWithInteractivity,
+        )
+
+        original_init_state = Sam3MultiplexTrackingWithInteractivity.init_state
+        if not getattr(original_init_state, "_pigeonlab_compat_patch", False):
+
+            def patched_init_state(self, *args, **kwargs):
+                kwargs.pop("offload_state_to_cpu", None)
+                return original_init_state(self, *args, **kwargs)
+
+            patched_init_state._pigeonlab_compat_patch = True  # type: ignore[attr-defined]
+            Sam3MultiplexTrackingWithInteractivity.init_state = patched_init_state
+            logger.info("Applied SAM3.1 init_state offload_state_to_cpu compatibility patch")
+    except Exception:
+        logger.debug("SAM3.1 init_state compatibility patch skipped", exc_info=True)
+
+    if _is_windows():
+        try:
+            import importlib
+            import torch.nn.attention as torch_attention
+            from torch.nn.attention import SDPBackend
+
+            original_sdpa_kernel = torch_attention.sdpa_kernel
+            if not getattr(original_sdpa_kernel, "_pigeonlab_compat_patch", False):
+                fallback_backends = []
+                for name in ("EFFICIENT_ATTENTION", "CUDNN_ATTENTION", "MATH"):
+                    backend = getattr(SDPBackend, name, None)
+                    if backend is not None:
+                        fallback_backends.append(backend)
+
+                def patched_sdpa_kernel(backends, *args, **kwargs):
+                    requested = _as_backend_list(backends)
+                    for backend in fallback_backends:
+                        if backend not in requested:
+                            requested.append(backend)
+                    return original_sdpa_kernel(requested, *args, **kwargs)
+
+                patched_sdpa_kernel._pigeonlab_compat_patch = True  # type: ignore[attr-defined]
+                torch_attention.sdpa_kernel = patched_sdpa_kernel
+
+                for module_name in ("sam3.model.decoder", "sam3.model.vl_combiner"):
+                    try:
+                        module = importlib.import_module(module_name)
+                        if getattr(module, "sdpa_kernel", None) is original_sdpa_kernel:
+                            setattr(module, "sdpa_kernel", patched_sdpa_kernel)
+                    except Exception:
+                        logger.debug("Could not patch %s.sdpa_kernel", module_name, exc_info=True)
+
+                logger.info("Applied SAM3.1 Windows SDPA fallback compatibility patch")
+        except Exception:
+            logger.debug("SAM3.1 SDPA compatibility patch skipped", exc_info=True)
+
+    _SAM3_RUNTIME_PATCHES_APPLIED = True
+
+
+def get_sam3_version() -> str:
+    return os.getenv("PIGEONLAB_SAM3_VERSION", "sam3.1").strip() or "sam3.1"
+
+
+def get_sam3_model_id(version: str | None = None) -> str:
+    version = version or get_sam3_version()
+    return os.getenv(
+        "PIGEONLAB_SAM3_MODEL_ID",
+        "facebook/sam3.1" if version == "sam3.1" else "facebook/sam3",
+    )
+
+
+def get_sam3_model_dir(version: str | None = None) -> Path:
+    version = version or get_sam3_version()
+    configured = os.getenv("PIGEONLAB_SAM3_MODEL_DIR")
+    if configured:
+        path = Path(configured)
+        return path if path.is_absolute() else PROJECT_ROOT / path
+    return MODEL_ROOT / version
+
+
+def _read_config(model_dir: Path) -> dict[str, Any] | None:
+    config_path = model_dir / "config.json"
+    if not config_path.is_file():
+        return None
+    try:
+        return json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def find_sam3_checkpoint(version: str | None = None, model_dir: Path | None = None) -> Path | None:
+    """Return the preferred local native checkpoint path, if one exists."""
+    configured = os.getenv("PIGEONLAB_SAM3_CHECKPOINT")
+    if configured:
+        path = Path(configured)
+        path = path if path.is_absolute() else PROJECT_ROOT / path
+        return path if path.is_file() else None
+
+    version = version or get_sam3_version()
+    model_dir = model_dir or get_sam3_model_dir(version)
+    names = (
+        ["sam3.1_multiplex.pt", "sam3_1_multiplex.pt", "sam3.1.pt", "sam3.pt"]
+        if version == "sam3.1"
+        else ["sam3.pt"]
+    )
+    for name in names:
+        candidate = model_dir / name
+        if candidate.is_file():
+            return candidate
+    matches = sorted(model_dir.glob("*.pt")) if model_dir.is_dir() else []
+    return matches[0] if matches else None
+
+
+def _model_ref_for_transformers(version: str) -> str:
+    model_dir = get_sam3_model_dir(version)
+    if (model_dir / "config.json").is_file():
+        return str(model_dir)
+    return get_sam3_model_id(version)
+
+
+def _torch_version_ok(minimum: tuple[int, int] = (2, 7)) -> bool:
+    if not TORCH_AVAILABLE:
+        return False
+    parts = torch.__version__.split(".")  # type: ignore[union-attr]
+    try:
+        major = int(parts[0])
+        minor = int(parts[1].split("+")[0].split("a")[0].split("b")[0].split("rc")[0])
+    except (IndexError, ValueError):
+        return False
+    return (major, minor) >= minimum
+
+
+def get_sam3_status(load_model: bool = False) -> dict[str, Any]:
+    """Return a lightweight readiness report for settings/health checks."""
+    version = get_sam3_version()
+    model_dir = get_sam3_model_dir(version)
+    checkpoint = find_sam3_checkpoint(version, model_dir)
+    config = _read_config(model_dir)
+    allow_hf = _env_bool("PIGEONLAB_ALLOW_HF_DOWNLOAD", False)
+
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    if not TORCH_AVAILABLE:
+        errors.append("PyTorch is not installed.")
+    elif not _torch_version_ok():
+        errors.append(f"PyTorch 2.7+ is required for SAM3. Found {torch.__version__}.")
+
+    cuda_available = bool(TORCH_AVAILABLE and torch.cuda.is_available())
+    cuda_version = torch.version.cuda if TORCH_AVAILABLE else None
+    gpu_name = torch.cuda.get_device_name(0) if cuda_available else None
+
+    if version == "sam3.1":
+        if sys.version_info < (3, 12):
+            errors.append("SAM3.1 requires Python 3.12 or newer.")
+        if not SAM3_NATIVE_AVAILABLE:
+            errors.append("SAM3.1 requires the latest facebookresearch/sam3 package.")
+        if checkpoint is None and not allow_hf:
+            errors.append(
+                "SAM3.1 checkpoint not found. Run backend/scripts/download_sam3.py "
+                "or set PIGEONLAB_SAM3_CHECKPOINT."
+            )
+        if not cuda_available:
+            errors.append("CUDA GPU not detected. SAM3.1 video inference requires a CUDA-capable GPU.")
+        elif cuda_version and tuple(int(p) for p in cuda_version.split(".")[:2]) < (12, 6):
+            warnings.append(f"SAM3.1 officially expects CUDA 12.6+. Found CUDA {cuda_version}.")
+    else:
+        if not SAM3_NATIVE_AVAILABLE and not SAM3_TRANSFORMERS_AVAILABLE:
+            errors.append("Install either facebookresearch/sam3 or Transformers with SAM3 support.")
+        if checkpoint is None and not allow_hf and not (model_dir / "config.json").is_file():
+            warnings.append(
+                "No local SAM3 model files found. Set PIGEONLAB_ALLOW_HF_DOWNLOAD=1 "
+                "to permit runtime Hugging Face downloads."
+            )
+
+    backend = None
+    if version == "sam3.1" and SAM3_NATIVE_AVAILABLE:
+        backend = "native-sam3.1"
+    elif SAM3_NATIVE_AVAILABLE:
+        backend = "native-sam3"
+    elif SAM3_TRANSFORMERS_AVAILABLE:
+        backend = "transformers"
+
+    load_error = None
+    if load_model and not errors:
+        try:
+            wrapper = get_sam3()
+            loaded = wrapper.is_loaded
+        except Exception as exc:  # pragma: no cover - hardware/model dependent
+            loaded = False
+            load_error = str(exc)
+            errors.append(f"SAM3 model failed to load: {exc}")
+    else:
+        loaded = _instance.is_loaded if _instance is not None else False
+
+    return {
+        "ready": len(errors) == 0,
+        "loaded": loaded,
+        "version": version,
+        "backend": backend,
+        "native_available": SAM3_NATIVE_AVAILABLE,
+        "transformers_available": SAM3_TRANSFORMERS_AVAILABLE,
+        "torch_available": TORCH_AVAILABLE,
+        "torch_version": torch.__version__ if TORCH_AVAILABLE else None,
+        "cuda_available": cuda_available,
+        "cuda_version": cuda_version,
+        "gpu_name": gpu_name,
+        "python_version": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+        "recommended_dtype": str(_cuda_dtype()).replace("torch.", "") if cuda_available else "float32",
+        "model_id": get_sam3_model_id(version),
+        "model_dir": str(model_dir),
+        "checkpoint_path": str(checkpoint) if checkpoint else None,
+        "config_path": str(model_dir / "config.json") if (model_dir / "config.json").is_file() else None,
+        "config_model_type": config.get("model_type") if config else None,
+        "config_architectures": config.get("architectures") if config else None,
+        "allow_hf_download": allow_hf,
+        "errors": errors,
+        "warnings": warnings,
+        "load_error": load_error,
+    }
+
 
 class SAM3Wrapper:
-    """Wrapper around Meta's SAM 3 for pigeon detection and segmentation.
-
-    Exposes both the image API (single-frame masks) and the video API
-    (session-based tracking across frames).  Supports two backends:
-
-    - **Native** (``sam3`` package installed from source)
-    - **Transformers** (``transformers`` pip package)
-
-    Usage::
-
-        wrapper = SAM3Wrapper()
-        wrapper.load()
-        detections = wrapper.predict_frame(frame_bgr, "pigeon")
-    """
+    """Wrapper around SAM3 image/video APIs with SAM3.1 support."""
 
     def __init__(
         self,
-        model_id: str = "facebook/sam3",
+        model_id: str | None = None,
+        checkpoint_path: str | None = None,
+        version: str | None = None,
         device: str | None = None,
     ) -> None:
-        """Initialise the wrapper.
+        self._version = version or get_sam3_version()
+        self._model_id = model_id or get_sam3_model_id(self._version)
+        found_checkpoint = find_sam3_checkpoint(self._version)
+        self._checkpoint_path = checkpoint_path or (str(found_checkpoint) if found_checkpoint else None)
 
-        Args:
-            model_id: HuggingFace model ID used when loading via
-                the transformers backend.
-            device: PyTorch device string.  When ``None``, auto-detects
-                CUDA availability and falls back to ``"cpu"``.
-        """
-        self._model_id = model_id
-
-        if device is None:
+        if not TORCH_AVAILABLE:
+            self._device = device or "cpu"
+        elif device is None:
             self._device = "cuda" if torch.cuda.is_available() else "cpu"
         else:
             self._device = device
@@ -98,75 +383,119 @@ class SAM3Wrapper:
         self._video_predictor = None
         self._loaded = False
         self._using_native = False
-
-        # Stores transformers-based video inference sessions keyed by UUID.
         self._video_sessions: dict[str, object] = {}
-
-    # ------------------------------------------------------------------
-    # Properties
-    # ------------------------------------------------------------------
 
     @property
     def is_loaded(self) -> bool:
-        """Return ``True`` if the model has been loaded into memory."""
         return self._loaded
 
     @property
     def device(self) -> str:
-        """Return the PyTorch device string the model is running on."""
         return self._device
 
     @property
     def using_native(self) -> bool:
-        """Return ``True`` if using the native SAM 3 package backend."""
         return self._using_native
 
-    # ------------------------------------------------------------------
-    # Lifecycle
-    # ------------------------------------------------------------------
+    @property
+    def version(self) -> str:
+        return self._version
 
     def load(self) -> None:
-        """Load SAM 3 image and video models.
+        if not TORCH_AVAILABLE:
+            raise ImportError("PyTorch is required for SAM3.")
 
-        Prefers the native ``sam3`` package when available; otherwise
-        falls back to the HuggingFace ``transformers`` backend.
-
-        Raises:
-            ImportError: If neither the ``sam3`` package nor
-                ``transformers`` with SAM 3 support is installed.
-        """
-        if not SAM3_AVAILABLE:
-            raise ImportError(
-                "SAM 3 not found. Install with either:\n"
-                "  Option A (native): git clone https://github.com/facebookresearch/sam3.git "
-                "&& cd sam3 && pip install -e .\n"
-                "  Option B (transformers): pip install transformers accelerate"
-            )
-
-        if SAM3_NATIVE_AVAILABLE:
-            logger.info("Loading SAM 3 image model via native package on %s …", self._device)
-            self._image_model = build_sam3_image_model()
-            self._image_model.to(self._device)
-            self._image_processor = NativeSam3Processor(self._image_model)
-            self._video_predictor = build_sam3_video_predictor()
-            self._using_native = True
-            logger.info("SAM 3 loaded via native package on %s", self._device)
+        if self._version == "sam3.1":
+            self._load_native_sam31()
+        elif SAM3_NATIVE_AVAILABLE:
+            self._load_native_sam3()
+        elif SAM3_TRANSFORMERS_AVAILABLE:
+            self._load_transformers_sam3()
         else:
-            logger.info("Loading SAM 3 via transformers on %s …", self._device)
-            self._image_model = Sam3Model.from_pretrained(self._model_id).to(self._device)
-            self._image_processor = HFSam3Processor.from_pretrained(self._model_id)
-            self._video_model = Sam3VideoModel.from_pretrained(self._model_id).to(
-                self._device, dtype=torch.bfloat16,
+            raise ImportError(
+                "SAM3 is not available. Install facebookresearch/sam3, or install "
+                "Transformers with SAM3 support for the older facebook/sam3 model."
             )
-            self._video_processor = HFSam3VideoProcessor.from_pretrained(self._model_id)
-            self._using_native = False
-            logger.info("SAM 3 loaded via transformers on %s", self._device)
 
         self._loaded = True
 
-    # ------------------------------------------------------------------
-    # Image API — single-frame prediction
-    # ------------------------------------------------------------------
+    def _load_native_sam31(self) -> None:
+        if not SAM3_NATIVE_AVAILABLE:
+            raise ImportError(
+                "SAM3.1 requires the latest facebookresearch/sam3 package. "
+                "Clone https://github.com/facebookresearch/sam3 and run pip install -e ."
+            )
+        if build_sam3_predictor is None:
+            raise ImportError(
+                "The installed sam3 package is too old for SAM3.1. Pull the latest "
+                "facebookresearch/sam3 code and reinstall it."
+            )
+
+        _apply_sam3_runtime_patches()
+
+        kwargs = {
+            "version": "sam3.1",
+            "checkpoint_path": self._checkpoint_path,
+            "compile": _env_bool("PIGEONLAB_SAM3_COMPILE", False),
+            "warm_up": _env_bool("PIGEONLAB_SAM3_WARM_UP", False),
+            "max_num_objects": int(os.getenv("PIGEONLAB_SAM3_MAX_OBJECTS", "16")),
+            "multiplex_count": int(os.getenv("PIGEONLAB_SAM3_MULTIPLEX_COUNT", "16")),
+            "use_fa3": _env_bool("PIGEONLAB_SAM3_USE_FA3", False),
+            "use_rope_real": _env_bool("PIGEONLAB_SAM3_USE_ROPE_REAL", True),
+            "async_loading_frames": _env_bool("PIGEONLAB_SAM3_ASYNC_LOADING", True),
+        }
+        logger.info("Loading SAM3.1 native video predictor on %s", self._device)
+        self._video_predictor = build_sam3_predictor(**kwargs)
+        self._using_native = True
+
+    def _load_native_sam3(self) -> None:
+        if not SAM3_NATIVE_AVAILABLE:
+            raise ImportError("Native sam3 package is not installed.")
+
+        kwargs = {
+            "checkpoint_path": self._checkpoint_path,
+            "load_from_HF": self._checkpoint_path is None and _env_bool("PIGEONLAB_ALLOW_HF_DOWNLOAD", False),
+            "device": self._device,
+            "compile": _env_bool("PIGEONLAB_SAM3_COMPILE", False),
+        }
+        logger.info("Loading SAM3 native video predictor on %s", self._device)
+        try:
+            self._video_predictor = build_sam3_video_predictor(**kwargs)
+        except TypeError:
+            self._video_predictor = build_sam3_video_predictor()
+        self._using_native = True
+
+    def _load_transformers_sam3(self) -> None:
+        if not SAM3_TRANSFORMERS_AVAILABLE:
+            raise ImportError("Transformers SAM3 classes are not installed.")
+        model_ref = _model_ref_for_transformers(self._version)
+        dtype = _cuda_dtype() if self._device.startswith("cuda") else torch.float32
+
+        logger.info("Loading SAM3 Transformers video model from %s on %s", model_ref, self._device)
+        self._video_model = Sam3VideoModel.from_pretrained(model_ref).to(self._device, dtype=dtype)
+        self._video_processor = HFSam3VideoProcessor.from_pretrained(model_ref)
+        self._using_native = False
+
+    def _ensure_image_model(self) -> None:
+        if self._image_model is not None and self._image_processor is not None:
+            return
+
+        if self._using_native:
+            kwargs = {
+                "checkpoint_path": self._checkpoint_path,
+                "load_from_HF": self._checkpoint_path is None and _env_bool("PIGEONLAB_ALLOW_HF_DOWNLOAD", False),
+                "device": self._device,
+            }
+            self._image_model = build_sam3_image_model(**kwargs)
+            self._image_processor = NativeSam3Processor(self._image_model)
+            return
+
+        if not SAM3_TRANSFORMERS_AVAILABLE:
+            raise RuntimeError("No SAM3 image model backend is available.")
+
+        model_ref = _model_ref_for_transformers(self._version)
+        self._image_model = Sam3Model.from_pretrained(model_ref).to(self._device)
+        self._image_processor = HFSam3Processor.from_pretrained(model_ref)
 
     def predict_frame(
         self,
@@ -174,196 +503,60 @@ class SAM3Wrapper:
         text_prompt: str,
         confidence_threshold: float = 0.5,
     ) -> list[dict]:
-        """Run segmentation on a single BGR image frame.
-
-        Args:
-            frame_bgr: NumPy array ``(H, W, 3)`` in BGR colour order.
-            text_prompt: Natural-language description of objects to segment,
-                e.g. ``"pigeon"``.
-            confidence_threshold: Minimum confidence score to keep a
-                detection.  Detections below this value are filtered out.
-
-        Returns:
-            List of detection dicts with keys ``mask`` (bool ``HxW``),
-            ``bbox`` (``[x1, y1, x2, y2]``), ``confidence`` (float),
-            ``obj_id`` (sequential int).  Empty list when nothing is found.
-
-        Raises:
-            RuntimeError: If :meth:`load` has not been called.
-        """
         if not self._loaded:
             raise RuntimeError("Model not loaded. Call load() first.")
 
-        # Convert BGR numpy to RGB PIL Image
+        self._ensure_image_model()
         rgb = frame_bgr[:, :, ::-1]
         image = Image.fromarray(rgb)
 
         if self._using_native:
-            processor = NativeSam3Processor(self._image_model)
-            inference_state = processor.set_image(image)
-            output = processor.set_text_prompt(
+            inference_state = self._image_processor.set_image(image)
+            output = self._image_processor.set_text_prompt(
                 state=inference_state,
                 prompt=text_prompt,
             )
-            masks = output["masks"]
-            boxes = output["boxes"]
-            scores = output["scores"]
-        else:
-            inputs = self._image_processor(
-                images=image, text=text_prompt, return_tensors="pt",
-            ).to(self._device)
-            with torch.no_grad():
-                outputs = self._image_model(**inputs)
-            results = self._image_processor.post_process_instance_segmentation(
-                outputs,
-                threshold=confidence_threshold,
-                mask_threshold=0.5,
-                target_sizes=inputs.get("original_sizes").tolist(),
-            )[0]
-            masks = results["masks"]
-            boxes = results["boxes"]
-            scores = results["scores"]
+            return self._parse_detection_container(output, confidence_threshold)
 
-        detections: list[dict] = []
-        for idx in range(len(scores)):
-            score = float(scores[idx])
-            if score < confidence_threshold:
-                continue
-
-            mask = masks[idx]
-            if isinstance(mask, torch.Tensor):
-                mask = mask.cpu().numpy()
-            mask_bool: np.ndarray = mask.astype(bool)
-
-            box = boxes[idx]
-            if isinstance(box, torch.Tensor):
-                box = box.cpu().tolist()
-            bbox = [int(box[0]), int(box[1]), int(box[2]), int(box[3])]
-
-            detections.append({
-                "mask": mask_bool,
-                "bbox": bbox,
-                "confidence": round(score, 4),
-                "obj_id": idx,
-            })
-
-        # Sort by confidence descending, re-assign sequential obj_id
-        detections.sort(key=lambda d: d["confidence"], reverse=True)
-        for i, det in enumerate(detections):
-            det["obj_id"] = i
-
-        logger.debug(
-            "SAM 3 predict_frame: %d detection(s) for prompt=%r on %dx%d frame",
-            len(detections), text_prompt, frame_bgr.shape[1], frame_bgr.shape[0],
-        )
-        return detections
-
-    # ------------------------------------------------------------------
-    # Video API — session-based tracking
-    # ------------------------------------------------------------------
+        inputs = self._image_processor(images=image, text=text_prompt, return_tensors="pt").to(self._device)
+        with torch.no_grad():
+            outputs = self._image_model(**inputs)
+        results = self._image_processor.post_process_instance_segmentation(
+            outputs,
+            threshold=confidence_threshold,
+            mask_threshold=0.5,
+            target_sizes=inputs.get("original_sizes").tolist(),
+        )[0]
+        return self._parse_detection_container(results, confidence_threshold)
 
     def start_video_session(self, video_path: str) -> str:
-        """Start a SAM 3 video tracking session.
-
-        Args:
-            video_path: Path to the video file.
-
-        Returns:
-            A session ID string for use with :meth:`predict_video_frame`,
-            :meth:`propagate_video`, and :meth:`close_video_session`.
-
-        Raises:
-            RuntimeError: If :meth:`load` has not been called.
-        """
         if not self._loaded:
             raise RuntimeError("Model not loaded. Call load() first.")
 
         if self._using_native:
             response = self._video_predictor.handle_request(
-                request=dict(type="start_session", resource_path=video_path),
+                request={"type": "start_session", "resource_path": video_path},
             )
-            session_id: str = response["session_id"]
-        else:
-            from transformers.video_utils import load_video  # type: ignore[import-untyped]
+            return str(response["session_id"])
 
-            video_frames, _ = load_video(video_path)
-            inference_session = self._video_processor.init_video_session(
-                video=video_frames,
-                inference_device=self._device,
-                processing_device="cpu",
-                video_storage_device="cpu",
-                dtype=torch.bfloat16,
-            )
-            session_id = str(uuid.uuid4())
-            self._video_sessions[session_id] = inference_session
+        from transformers.video_utils import load_video  # type: ignore[import-untyped]
 
-        logger.info(
-            "SAM 3 video session started: %s for %s", session_id, video_path,
+        video_frames, _ = load_video(video_path)
+        dtype = _cuda_dtype() if self._device.startswith("cuda") else torch.float32
+        inference_session = self._video_processor.init_video_session(
+            video=video_frames,
+            inference_device=self._device,
+            processing_device="cpu",
+            video_storage_device="cpu",
+            dtype=dtype,
         )
+        session_id = str(uuid.uuid4())
+        self._video_sessions[session_id] = inference_session
         return session_id
 
-    def predict_video_frame(
-        self,
-        session_id: str,
-        frame_index: int,
-        text_prompt: str,
-    ) -> list[dict]:
-        """Run segmentation on a single frame within a video session.
-
-        Uses SAM 3's video API for temporally-consistent tracking.
-
-        Args:
-            session_id: Session ID from :meth:`start_video_session`.
-            frame_index: Zero-based frame index.
-            text_prompt: Object description, e.g. ``"pigeon"``.
-
-        Returns:
-            List of detection dicts with keys ``mask``, ``bbox``,
-            ``confidence``, ``obj_id``.
-
-        Raises:
-            RuntimeError: If :meth:`load` has not been called.
-            KeyError: If the *session_id* is unknown (transformers backend).
-        """
-        if not self._loaded:
-            raise RuntimeError("Model not loaded. Call load() first.")
-
-        if self._using_native:
-            response = self._video_predictor.handle_request(
-                request=dict(
-                    type="add_prompt",
-                    session_id=session_id,
-                    frame_index=frame_index,
-                    text=text_prompt,
-                ),
-            )
-            output = response["outputs"]
-            return self._parse_video_outputs(output)
-        else:
-            session = self._video_sessions[session_id]
-            session = self._video_processor.add_text_prompt(
-                inference_session=session,
-                text=text_prompt,
-            )
-            self._video_sessions[session_id] = session
-
-            outputs_per_frame: dict[int, list[dict]] = {}
-            for model_outputs in self._video_model.propagate_in_video_iterator(
-                inference_session=session,
-                max_frame_num_to_track=frame_index + 1,
-            ):
-                processed = self._video_processor.postprocess_outputs(
-                    session, model_outputs,
-                )
-                fidx = model_outputs.frame_idx
-                outputs_per_frame[fidx] = self._parse_processed_outputs(processed)
-
-            result = outputs_per_frame.get(frame_index, [])
-            logger.debug(
-                "SAM 3 predict_video_frame: %d detection(s) at frame %d, session=%s",
-                len(result), frame_index, session_id,
-            )
-            return result
+    def predict_video_frame(self, session_id: str, frame_index: int, text_prompt: str) -> list[dict]:
+        detections = self.propagate_video(session_id, text_prompt, max_frames=frame_index + 1)
+        return detections.get(frame_index, [])
 
     def propagate_video(
         self,
@@ -371,193 +564,259 @@ class SAM3Wrapper:
         text_prompt: str,
         max_frames: int = 10000,
     ) -> dict[int, list[dict]]:
-        """Run full video propagation and return all frames at once.
-
-        More efficient than calling :meth:`predict_video_frame` for
-        every frame individually.
-
-        Args:
-            session_id: Session ID from :meth:`start_video_session`.
-            text_prompt: Object description, e.g. ``"pigeon"``.
-            max_frames: Maximum number of frames to propagate through.
-
-        Returns:
-            Dict mapping frame indices to lists of detection dicts.
-
-        Raises:
-            RuntimeError: If :meth:`load` has not been called.
-            KeyError: If the *session_id* is unknown (transformers backend).
-        """
         if not self._loaded:
             raise RuntimeError("Model not loaded. Call load() first.")
 
         if self._using_native:
-            # Add prompt first
-            self._video_predictor.handle_request(
-                request=dict(
-                    type="add_prompt",
-                    session_id=session_id,
-                    frame_index=0,
-                    text=text_prompt,
-                ),
+            return self._propagate_native(session_id, text_prompt, max_frames)
+        return self._propagate_transformers(session_id, text_prompt, max_frames)
+
+    def _propagate_native(
+        self,
+        session_id: str,
+        text_prompt: str,
+        max_frames: int,
+    ) -> dict[int, list[dict]]:
+        response = self._video_predictor.handle_request(
+            request={
+                "type": "add_prompt",
+                "session_id": session_id,
+                "frame_index": 0,
+                "text": text_prompt,
+            },
+        )
+
+        results: dict[int, list[dict]] = {}
+        initial = self._parse_native_response(response)
+        if initial:
+            results[0] = initial
+
+        if hasattr(self._video_predictor, "handle_stream_request"):
+            # Do not pass a bounded max-frame argument into native SAM3.1 here.
+            # Some Windows workstation runs hit an upstream multiplex edge case
+            # at the bounded propagation finalization step. Streaming unbounded
+            # and stopping client-side avoids that path while keeping inference
+            # results identical for the frames we consume.
+            stream = self._video_predictor.handle_stream_request(
+                request={"type": "propagate_in_video", "session_id": session_id},
             )
-            # Iterate all frames
-            results: dict[int, list[dict]] = {}
-            for frame_idx in range(max_frames):
-                response = self._video_predictor.handle_request(
-                    request=dict(
-                        type="get_frame",
-                        session_id=session_id,
-                        frame_index=frame_idx,
-                    ),
-                )
-                if response.get("done"):
+            for packet in stream:
+                frame_idx = self._extract_frame_idx(packet, len(results))
+                if frame_idx >= max_frames:
                     break
-                output = response.get("outputs", [])
-                results[frame_idx] = self._parse_video_outputs(output)
+                results[frame_idx] = self._parse_native_response(packet)
             return results
-        else:
-            session = self._video_sessions[session_id]
-            session = self._video_processor.add_text_prompt(
-                inference_session=session,
-                text=text_prompt,
-            )
-            self._video_sessions[session_id] = session
 
-            results = {}
-            for model_outputs in self._video_model.propagate_in_video_iterator(
-                inference_session=session,
-                max_frame_num_to_track=max_frames,
-            ):
-                processed = self._video_processor.postprocess_outputs(
-                    session, model_outputs,
-                )
-                frame_idx = model_outputs.frame_idx
-                results[frame_idx] = self._parse_processed_outputs(processed)
-
-            logger.info(
-                "SAM 3 propagate_video: %d frames processed, session=%s",
-                len(results), session_id,
+        for frame_idx in range(max_frames):
+            response = self._video_predictor.handle_request(
+                request={
+                    "type": "get_frame",
+                    "session_id": session_id,
+                    "frame_index": frame_idx,
+                },
             )
-            return results
+            if response.get("done"):
+                break
+            results[frame_idx] = self._parse_native_response(response)
+        return results
+
+    def _propagate_transformers(
+        self,
+        session_id: str,
+        text_prompt: str,
+        max_frames: int,
+    ) -> dict[int, list[dict]]:
+        session = self._video_sessions[session_id]
+        session = self._video_processor.add_text_prompt(
+            inference_session=session,
+            text=text_prompt,
+        )
+        self._video_sessions[session_id] = session
+
+        results: dict[int, list[dict]] = {}
+        for model_outputs in self._video_model.propagate_in_video_iterator(
+            inference_session=session,
+            max_frame_num_to_track=max_frames,
+        ):
+            processed = self._video_processor.postprocess_outputs(session, model_outputs)
+            frame_idx = int(model_outputs.frame_idx)
+            results[frame_idx] = self._parse_detection_container(processed)
+        return results
 
     def close_video_session(self, session_id: str) -> None:
-        """Close a video tracking session and free resources.
-
-        Args:
-            session_id: Session ID from :meth:`start_video_session`.
-        """
-        if not self._using_native:
-            self._video_sessions.pop(session_id, None)
-            logger.debug("Video session %s closed", session_id)
-
-    # ------------------------------------------------------------------
-    # Private helpers
-    # ------------------------------------------------------------------
+        if self._using_native and self._video_predictor is not None:
+            try:
+                self._video_predictor.handle_request(
+                    request={"type": "close_session", "session_id": session_id},
+                )
+            except Exception:
+                logger.debug("SAM3 native close_session ignored for %s", session_id, exc_info=True)
+            return
+        self._video_sessions.pop(session_id, None)
 
     @staticmethod
-    def _parse_video_outputs(outputs: list) -> list[dict]:
-        """Parse native video API outputs into the standard detection format.
+    def _extract_frame_idx(packet: dict, fallback: int) -> int:
+        for key in ("frame_idx", "frame_index", "ann_frame_idx", "output_frame_idx"):
+            if key in packet:
+                try:
+                    return int(packet[key])
+                except (TypeError, ValueError):
+                    pass
+        return fallback
 
-        Args:
-            outputs: Raw output list from the native video predictor.
+    def _parse_native_response(self, response: Any) -> list[dict]:
+        if response is None:
+            return []
+        if isinstance(response, dict):
+            if "outputs" in response:
+                return self._parse_detection_container(response["outputs"])
+            return self._parse_detection_container(response)
+        return self._parse_detection_container(response)
 
-        Returns:
-            List of detection dicts.
-        """
-        results: list[dict] = []
-        for idx, out in enumerate(outputs):
-            mask = out.get("mask")
-            if isinstance(mask, torch.Tensor):
-                mask = mask.cpu().numpy()
-            if mask is not None:
-                mask = mask.astype(bool)
+    @classmethod
+    def _parse_detection_container(
+        cls,
+        container: Any,
+        confidence_threshold: float = 0.0,
+    ) -> list[dict]:
+        if container is None:
+            return []
 
-            box = out.get("box", out.get("bbox", [0, 0, 0, 0]))
-            if isinstance(box, torch.Tensor):
-                box = box.cpu().tolist()
-            bbox = [int(box[0]), int(box[1]), int(box[2]), int(box[3])]
+        if isinstance(container, list):
+            detections = [cls._parse_single_detection(item, idx) for idx, item in enumerate(container)]
+            return cls._finalize_detections(detections, confidence_threshold)
 
-            score = float(out.get("score", out.get("confidence", 0.0)))
+        if isinstance(container, dict):
+            masks = container.get("masks", container.get("out_binary_masks", []))
+            boxes = container.get("boxes", container.get("bboxes", []))
+            scores = container.get("scores", container.get("object_scores", []))
+            object_ids = container.get("object_ids", container.get("obj_ids", []))
 
-            results.append({
-                "mask": mask,
-                "bbox": bbox,
-                "confidence": round(score, 4),
-                "obj_id": idx,
-            })
+            masks_np = cls._as_numpy(masks)
+            boxes_np = cls._as_numpy(boxes)
+            scores_np = cls._as_numpy(scores)
+            object_ids_np = cls._as_numpy(object_ids)
 
-        results.sort(key=lambda d: d["confidence"], reverse=True)
-        for i, det in enumerate(results):
-            det["obj_id"] = i
-        return results
+            count = cls._container_count(masks_np, boxes_np, scores_np, object_ids_np)
+            detections = []
+            for idx in range(count):
+                mask = cls._index_or_none(masks_np, idx)
+                if mask is not None and mask.ndim == 3 and mask.shape[0] == 1:
+                    mask = mask[0]
+                bbox = cls._index_or_none(boxes_np, idx)
+                if bbox is None and mask is not None:
+                    bbox = cls._bbox_from_mask(mask)
+                score = cls._scalar_at(scores_np, idx, default=1.0)
+                obj_id = int(cls._scalar_at(object_ids_np, idx, default=idx))
+                detections.append({
+                    "mask": mask.astype(bool) if mask is not None else None,
+                    "bbox": cls._normalize_bbox(bbox),
+                    "confidence": round(float(score), 4),
+                    "obj_id": obj_id,
+                })
+            return cls._finalize_detections(detections, confidence_threshold)
+
+        return []
+
+    @classmethod
+    def _parse_single_detection(cls, item: Any, idx: int) -> dict:
+        if not isinstance(item, dict):
+            return {"mask": None, "bbox": [0, 0, 0, 0], "confidence": 1.0, "obj_id": idx}
+        mask = cls._as_numpy(item.get("mask", item.get("masks")))
+        if mask is not None and mask.ndim == 3 and mask.shape[0] == 1:
+            mask = mask[0]
+        bbox = item.get("box", item.get("bbox", item.get("boxes")))
+        if bbox is None and mask is not None:
+            bbox = cls._bbox_from_mask(mask)
+        return {
+            "mask": mask.astype(bool) if mask is not None else None,
+            "bbox": cls._normalize_bbox(cls._as_numpy(bbox)),
+            "confidence": round(float(item.get("score", item.get("confidence", 1.0))), 4),
+            "obj_id": int(item.get("object_id", item.get("obj_id", idx))),
+        }
 
     @staticmethod
-    def _parse_processed_outputs(processed: dict) -> list[dict]:
-        """Parse transformers postprocessed outputs into detection format.
+    def _as_numpy(value: Any) -> np.ndarray | None:
+        if value is None:
+            return None
+        if TORCH_AVAILABLE and isinstance(value, torch.Tensor):
+            return value.detach().cpu().numpy()
+        if isinstance(value, np.ndarray):
+            return value
+        if isinstance(value, (list, tuple)) and len(value) == 0:
+            return np.array([])
+        try:
+            return np.asarray(value)
+        except Exception:
+            return None
 
-        Args:
-            processed: Output from ``Sam3VideoProcessor.postprocess_outputs``.
+    @staticmethod
+    def _container_count(*arrays: np.ndarray | None) -> int:
+        for arr in arrays:
+            if arr is not None and arr.ndim > 0 and arr.shape[0] > 0:
+                return int(arr.shape[0])
+        return 0
 
-        Returns:
-            List of detection dicts.
-        """
-        results: list[dict] = []
-        masks = processed.get("masks", [])
-        boxes = processed.get("boxes", [])
-        scores = processed.get("scores", [])
+    @staticmethod
+    def _index_or_none(arr: np.ndarray | None, idx: int) -> np.ndarray | None:
+        if arr is None or arr.size == 0 or arr.ndim == 0 or idx >= arr.shape[0]:
+            return None
+        return arr[idx]
 
-        for idx in range(len(scores)):
-            mask = masks[idx]
-            if isinstance(mask, torch.Tensor):
-                mask = mask.cpu().numpy()
-            mask_bool = mask.astype(bool)
+    @staticmethod
+    def _scalar_at(arr: np.ndarray | None, idx: int, default: float) -> float:
+        if arr is None or arr.size == 0:
+            return default
+        try:
+            return float(arr.reshape(-1)[idx])
+        except (IndexError, TypeError, ValueError):
+            return default
 
-            box = boxes[idx]
-            if isinstance(box, torch.Tensor):
-                box = box.cpu().tolist()
-            bbox = [int(box[0]), int(box[1]), int(box[2]), int(box[3])]
+    @staticmethod
+    def _bbox_from_mask(mask: np.ndarray) -> list[int]:
+        if mask is None or mask.size == 0:
+            return [0, 0, 0, 0]
+        ys, xs = np.where(mask.astype(bool))
+        if len(xs) == 0 or len(ys) == 0:
+            return [0, 0, 0, 0]
+        return [int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())]
 
-            score = float(scores[idx])
+    @staticmethod
+    def _normalize_bbox(bbox: Any) -> list[int]:
+        arr = np.asarray(bbox if bbox is not None else [0, 0, 0, 0]).reshape(-1)
+        if arr.size < 4:
+            return [0, 0, 0, 0]
+        return [int(arr[0]), int(arr[1]), int(arr[2]), int(arr[3])]
 
-            results.append({
-                "mask": mask_bool,
-                "bbox": bbox,
-                "confidence": round(score, 4),
-                "obj_id": idx,
-            })
+    @staticmethod
+    def _finalize_detections(detections: list[dict], confidence_threshold: float) -> list[dict]:
+        kept = [
+            d for d in detections
+            if d["confidence"] >= confidence_threshold and d["bbox"] != [0, 0, 0, 0]
+        ]
+        kept.sort(key=lambda d: d["confidence"], reverse=True)
+        return kept
 
-        results.sort(key=lambda d: d["confidence"], reverse=True)
-        for i, det in enumerate(results):
-            det["obj_id"] = i
-        return results
-
-
-# ======================================================================
-# Module-level singleton
-# ======================================================================
 
 _instance: SAM3Wrapper | None = None
 
 
-def get_sam3(model_id: str = "facebook/sam3") -> SAM3Wrapper:
-    """Return the module-level SAM3Wrapper singleton, creating if needed.
-
-    On first call the model is instantiated and :meth:`SAM3Wrapper.load`
-    is invoked.  Subsequent calls return the cached instance.
-
-    Args:
-        model_id: HuggingFace model ID for the SAM 3 model.
-
-    Returns:
-        A loaded :class:`SAM3Wrapper` ready for inference.
-    """
+def get_sam3(
+    model_id: str | None = None,
+    checkpoint_path: str | None = None,
+    version: str | None = None,
+) -> SAM3Wrapper:
+    """Return the module-level SAM3 wrapper, loading it on first use."""
     global _instance
 
     if _instance is not None:
         return _instance
 
-    wrapper = SAM3Wrapper(model_id=model_id)
+    wrapper = SAM3Wrapper(
+        model_id=model_id,
+        checkpoint_path=checkpoint_path,
+        version=version,
+    )
     wrapper.load()
     _instance = wrapper
     return _instance

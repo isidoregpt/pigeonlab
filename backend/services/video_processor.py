@@ -15,6 +15,7 @@ import aiosqlite
 from database import get_db_path
 from services.feature_extractor import FeatureExtractor
 from services.frame_extractor import FrameExtractor
+from services.gemma_reviewer import GemmaReviewer
 from services.qc_rules import QCRulesEngine
 from services.sam3 import get_sam3
 from services.tracker import PigeonTracker
@@ -82,7 +83,7 @@ class VideoProcessor:
             conn.row_factory = aiosqlite.Row
             try:
                 # 1. Mark processing
-                await self._update_status(conn, video_id, "processing")
+                await self._update_status(conn, video_id, "processing", error=None)
                 await conn.commit()
 
                 # 2. Extract frames
@@ -101,7 +102,7 @@ class VideoProcessor:
                 # 3. Lazy-load SAM 3
                 if self._sam3 is None:
                     logger.info("Loading SAM 3 model …")
-                    self._sam3 = get_sam3(self._sam3_checkpoint)
+                    self._sam3 = get_sam3(checkpoint_path=self._sam3_checkpoint)
 
                 # 4. Determine frame shape from first frame
                 first_frame = frame_extractor.get_frame(video_id, 0)
@@ -119,6 +120,7 @@ class VideoProcessor:
                 all_pairwise: list[dict] = []
                 all_qc_flags: list[dict] = []
                 prev_features: list[dict] | None = None
+                prev_tracked: list[dict] | None = None
                 session_id: str | None = None
 
                 if use_video_api:
@@ -151,7 +153,7 @@ class VideoProcessor:
                                 video_id=video_id,
                                 tracked_detections=tracked,
                                 frame_shape=frame_shape,
-                                prev_detections=all_detections.get(frame_num - 1),
+                                prev_detections=prev_tracked,
                                 fps=fps,
                             )
                             pairwise = feature_extractor.compute_pairwise(
@@ -169,6 +171,7 @@ class VideoProcessor:
                             all_pairwise.extend(pairwise)
                             all_qc_flags.extend(qc_rows)
                             prev_features = features
+                            prev_tracked = tracked
 
                         self._sam3.close_video_session(session_id)
                         session_id = None
@@ -181,6 +184,12 @@ class VideoProcessor:
                         )
                         self._sam3.close_video_session(session_id)
                         session_id = None
+                        tracker.reset()
+                        all_features.clear()
+                        all_pairwise.clear()
+                        all_qc_flags.clear()
+                        prev_features = None
+                        prev_tracked = None
                         use_video_api = False  # fall through to per-frame below
 
                 if not use_video_api:
@@ -196,12 +205,12 @@ class VideoProcessor:
 
                         features = feature_extractor.compute_features(
                             frame_idx=frame_num,
-                            video_id=video_id,
-                            tracked_detections=tracked,
-                            frame_shape=frame_shape,
-                            prev_detections=None,
-                            fps=fps,
-                        )
+                                video_id=video_id,
+                                tracked_detections=tracked,
+                                frame_shape=frame_shape,
+                                prev_detections=prev_tracked,
+                                fps=fps,
+                            )
                         pairwise = feature_extractor.compute_pairwise(
                             frame_idx=frame_num,
                             video_id=video_id,
@@ -217,6 +226,7 @@ class VideoProcessor:
                         all_pairwise.extend(pairwise)
                         all_qc_flags.extend(qc_rows)
                         prev_features = features
+                        prev_tracked = tracked
 
                         if frame_num % 100 == 0:
                             logger.debug(
@@ -229,7 +239,18 @@ class VideoProcessor:
                     video_id, len(all_features), len(all_pairwise),
                 )
 
-                # 6. Batch insert features
+                # 6. Ensure placeholder pigeons exist before feature inserts
+                track_labels = sorted({f["pigeon_id"] for f in all_features})
+                for label in track_labels:
+                    await conn.execute(
+                        """INSERT OR IGNORE INTO pigeons (pigeon_id, first_seen, last_seen)
+                           VALUES (?, ?, ?)""",
+                        (label, datetime.now().isoformat(), datetime.now().isoformat()),
+                    )
+                if track_labels:
+                    await conn.commit()
+
+                # 7. Batch insert features
                 if all_features:
                     await conn.executemany(
                         """INSERT INTO features (
@@ -255,7 +276,7 @@ class VideoProcessor:
                     )
                     await conn.commit()
 
-                # 7. Batch insert pairwise
+                # 8. Batch insert pairwise
                 if all_pairwise:
                     await conn.executemany(
                         """INSERT INTO pairwise (
@@ -274,7 +295,7 @@ class VideoProcessor:
                     )
                     await conn.commit()
 
-                # 8. Video-level QC + batch insert
+                # 9. Video-level QC + batch insert
                 video_qc = qc_engine.check_video(all_features)
                 video_qc_rows = qc_engine.flags_to_db_rows(video_qc, video_id)
                 all_qc_flags.extend(video_qc_rows)
@@ -296,11 +317,12 @@ class VideoProcessor:
                     )
                     await conn.commit()
 
-                # 9. Video assignments
+                # 10. Video assignments
                 unique_track_ids: set[int] = set()
                 for f in all_features:
+                    raw_id = str(f["pigeon_id"])
                     try:
-                        unique_track_ids.add(int(f["pigeon_id"]))
+                        unique_track_ids.add(int(raw_id.replace("unknown_", "", 1)))
                     except (ValueError, TypeError):
                         pass
 
@@ -319,26 +341,42 @@ class VideoProcessor:
                         ),
                     )
 
-                    # Ensure the pigeon row exists
-                    await conn.execute(
-                        """INSERT OR IGNORE INTO pigeons (pigeon_id)
-                           VALUES (?)""",
-                        (f"unknown_{tid}",),
-                    )
                 await conn.commit()
 
-                # 10. Mark completed
+                # 11. Optional Gemma reviewer pass
+                gemma_review = {"status": "skipped"}
+                try:
+                    reviewer = GemmaReviewer(frames_dir=self._frames_dir)
+                    gemma_review = await reviewer.review_video(
+                        conn=conn,
+                        video_id=video_id,
+                        total_frames=total_frames,
+                        fps=fps,
+                    )
+                    await conn.commit()
+                    logger.info(
+                        "Video %d Gemma review result: %s",
+                        video_id,
+                        gemma_review,
+                    )
+                except Exception as exc:
+                    logger.exception("Gemma reviewer failed for video %d", video_id)
+                    gemma_review = {"status": "failed", "error": str(exc)}
+
+                # 12. Mark completed
+                model_version = getattr(self._sam3, "version", "sam3")
                 await conn.execute(
                     """UPDATE videos
                        SET processing_status = 'completed',
                            processed_at = ?,
-                           model_version = 'sam3_hiera_large'
+                           processing_error = NULL,
+                           model_version = ?
                        WHERE video_id = ?""",
-                    (datetime.now().isoformat(), video_id),
+                    (datetime.now().isoformat(), model_version, video_id),
                 )
                 await conn.commit()
 
-                # 11. Return summary
+                # 13. Return summary
                 result = {
                     "video_id": video_id,
                     "status": "completed",
@@ -346,13 +384,14 @@ class VideoProcessor:
                     "pigeons_found": len(unique_track_ids),
                     "features_extracted": len(all_features),
                     "qc_flags_created": len(all_qc_flags),
+                    "gemma_review": gemma_review,
                 }
                 logger.info("Video %d processing complete: %s", video_id, result)
                 return result
 
-            except Exception:
+            except Exception as exc:
                 logger.exception("Processing failed for video %d", video_id)
-                await self._update_status(conn, video_id, "failed")
+                await self._update_status(conn, video_id, "failed", error=str(exc))
                 await conn.commit()
                 raise
             finally:
@@ -364,10 +403,20 @@ class VideoProcessor:
     # ------------------------------------------------------------------
 
     async def _update_status(
-        self, conn: aiosqlite.Connection, video_id: int, status: str,
+        self,
+        conn: aiosqlite.Connection,
+        video_id: int,
+        status: str,
+        error: str | None = None,
     ) -> None:
         """Update a video's processing status."""
-        await conn.execute(
-            "UPDATE videos SET processing_status = ? WHERE video_id = ?",
-            (status, video_id),
-        )
+        if error is None:
+            await conn.execute(
+                "UPDATE videos SET processing_status = ?, processing_error = NULL WHERE video_id = ?",
+                (status, video_id),
+            )
+        else:
+            await conn.execute(
+                "UPDATE videos SET processing_status = ?, processing_error = ? WHERE video_id = ?",
+                (status, error[:1000], video_id),
+            )

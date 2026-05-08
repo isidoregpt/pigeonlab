@@ -15,11 +15,13 @@ import {
   Loader2,
   Eye,
   EyeOff,
+  BrainCircuit,
 } from "lucide-react";
 import {
   getVideo,
   getFrameUrl,
   getVideoFeatures,
+  getVideoAIObservations,
   getVideoTrackEdits,
   updateVideoReview,
 } from "../api/videos";
@@ -67,6 +69,12 @@ export default function VideoDetail() {
   const featuresQuery = useQuery({
     queryKey: ["video-features", videoId, frameNum],
     queryFn: () => getVideoFeatures(videoId, frameNum),
+    enabled: !Number.isNaN(videoId) && totalFrames > 0,
+  });
+
+  const aiQuery = useQuery({
+    queryKey: ["video-ai-observations", videoId, frameNum],
+    queryFn: () => getVideoAIObservations(videoId, frameNum),
     enabled: !Number.isNaN(videoId) && totalFrames > 0,
   });
 
@@ -120,7 +128,7 @@ export default function VideoDetail() {
       reviewQCFlag({
         flag_id: flagId,
         action: "resolve",
-        resolved_action: "dismissed",
+        resolved_action: "ignored",
         reviewer: "lab_user",
       }),
     onSuccess: () => {
@@ -194,6 +202,7 @@ export default function VideoDetail() {
 
   const video = videoQuery.data;
   const features = featuresQuery.data ?? [];
+  const aiObservations = aiQuery.data ?? [];
 
   return (
     <div className="space-y-4">
@@ -338,6 +347,38 @@ export default function VideoDetail() {
                 </div>
               ))}
             </div>
+          )}
+
+          {/* AI observations for current frame */}
+          {aiObservations.length > 0 && (
+            <section className="bg-surface border border-border rounded-xl p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <BrainCircuit size={16} className="text-accent" />
+                <h2 className="text-sm font-semibold text-text-primary">
+                  Gemma observations
+                </h2>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {aiObservations.slice(0, 6).map((item) => (
+                  <div key={item.id} className="bg-bg/50 border border-border rounded-lg px-3 py-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-sm font-medium text-text-primary truncate">
+                        {item.label ?? item.observation_type}
+                      </p>
+                      {item.confidence != null && (
+                        <span className="text-[11px] text-text-secondary tabular-nums">
+                          {Math.round(item.confidence * 100)}%
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[12px] text-text-secondary truncate">
+                      {item.pigeon_id ? `${item.pigeon_id} · ` : ""}
+                      {item.zone ?? item.observation_type}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </section>
           )}
 
           {/* Pigeons in this frame */}
