@@ -16,6 +16,7 @@ class ResolvedAction(str, Enum):
     accepted = "accepted"
     corrected = "corrected"
     ignored = "ignored"
+    dismissed = "dismissed"
     empty = ""
 
 
@@ -94,6 +95,99 @@ ACTION_STATUS = {
     "reject": "rejected",
     "reassign": "approved",
 }
+
+
+def _track_candidates(video_obj_id: int, pigeon_id: str | None = None) -> list[str]:
+    candidates = [f"unknown_{video_obj_id}", str(video_obj_id)]
+    if pigeon_id:
+        candidates.insert(0, pigeon_id)
+    seen = set()
+    return [c for c in candidates if not (c in seen or seen.add(c))]
+
+
+def _replace_identity_references(
+    conn,
+    video_id: int,
+    video_obj_id: int,
+    old_pigeon_id: str,
+    new_pigeon_id: str,
+) -> int:
+    """Replace a track/pigeon label across derived analysis tables."""
+    conn.execute("INSERT OR IGNORE INTO pigeons (pigeon_id, first_seen) VALUES (?, datetime('now'))", (new_pigeon_id,))
+    candidates = _track_candidates(video_obj_id, old_pigeon_id)
+    placeholders = ",".join("?" for _ in candidates)
+
+    params = [new_pigeon_id, video_id, *candidates]
+    cur = conn.execute(
+        f"UPDATE features SET pigeon_id = ? WHERE video_id = ? AND pigeon_id IN ({placeholders})",
+        params,
+    )
+    changed = cur.rowcount if cur.rowcount is not None else 0
+
+    conn.execute(
+        f"UPDATE behaviors SET pigeon_id = ? WHERE video_id = ? AND pigeon_id IN ({placeholders})",
+        params,
+    )
+    conn.execute(
+        f"UPDATE pairwise SET pigeon_a = ? WHERE video_id = ? AND pigeon_a IN ({placeholders})",
+        params,
+    )
+    conn.execute(
+        f"UPDATE pairwise SET pigeon_b = ? WHERE video_id = ? AND pigeon_b IN ({placeholders})",
+        params,
+    )
+    conn.execute("DELETE FROM pairwise WHERE video_id = ? AND pigeon_a = pigeon_b", (video_id,))
+    return changed
+
+
+def _assignment_for_obj(conn, video_id: int, obj_id: int) -> dict | None:
+    row = conn.execute(
+        """SELECT * FROM video_assignments
+           WHERE video_id = ? AND video_obj_id = ?
+           ORDER BY id DESC LIMIT 1""",
+        (video_id, obj_id),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def _replace_track_label_after_frame(
+    conn,
+    video_id: int,
+    from_frame: int,
+    source_obj_id: int,
+    source_label: str,
+    target_label: str,
+) -> int:
+    conn.execute("INSERT OR IGNORE INTO pigeons (pigeon_id, first_seen) VALUES (?, datetime('now'))", (target_label,))
+    candidates = _track_candidates(source_obj_id, source_label)
+    placeholders = ",".join("?" for _ in candidates)
+    params = [target_label, video_id, from_frame, *candidates]
+
+    cur = conn.execute(
+        f"""UPDATE features
+            SET pigeon_id = ?
+            WHERE video_id = ? AND frame_idx >= ? AND pigeon_id IN ({placeholders})""",
+        params,
+    )
+    changed = cur.rowcount if cur.rowcount is not None else 0
+
+    conn.execute(
+        f"""UPDATE pairwise
+            SET pigeon_a = ?
+            WHERE video_id = ? AND frame_idx >= ? AND pigeon_a IN ({placeholders})""",
+        params,
+    )
+    conn.execute(
+        f"""UPDATE pairwise
+            SET pigeon_b = ?
+            WHERE video_id = ? AND frame_idx >= ? AND pigeon_b IN ({placeholders})""",
+        params,
+    )
+    conn.execute(
+        "DELETE FROM pairwise WHERE video_id = ? AND frame_idx >= ? AND pigeon_a = pigeon_b",
+        (video_id, from_frame),
+    )
+    return changed
 
 
 # --- Existing endpoints ---
@@ -241,7 +335,20 @@ async def list_unconfirmed_identities(video_id: int = Query(...)):
                ORDER BY confidence ASC""",
             (video_id,),
         ).fetchall()
-    return [dict(r) for r in rows]
+        result = []
+        for row in rows:
+            item = dict(row)
+            candidates = _track_candidates(row["video_obj_id"], row["pigeon_id"])
+            placeholders = ",".join("?" for _ in candidates)
+            sample = conn.execute(
+                f"""SELECT MIN(frame_idx) AS frame_idx
+                    FROM features
+                    WHERE video_id = ? AND pigeon_id IN ({placeholders})""",
+                [video_id, *candidates],
+            ).fetchone()
+            item["sample_frame_idx"] = sample["frame_idx"] if sample else 0
+            result.append(item)
+    return result
 
 
 @router.post("/identity")
@@ -263,13 +370,13 @@ async def review_identity(body: IdentityReviewRequest):
         new_status = ACTION_STATUS[body.action]
 
         old_pigeon = body.old_pigeon_id or assignment["pigeon_id"]
-        new_pigeon = body.new_pigeon_id or assignment["pigeon_id"]
+        new_pigeon = body.new_pigeon_id or body.pigeon_id or assignment["pigeon_id"]
 
-        if body.action == "reassign" and body.new_pigeon_id:
+        if body.action == "reassign" and new_pigeon:
             conn.execute(
                 """UPDATE video_assignments SET pigeon_id = ?, review_status = ?,
                    reviewed_at = datetime('now'), reviewed_by = ? WHERE id = ?""",
-                (body.new_pigeon_id, new_status, body.reviewer, body.assignment_id),
+                (new_pigeon, new_status, body.reviewer, body.assignment_id),
             )
         elif body.action == "reject":
             conn.execute(
@@ -282,6 +389,15 @@ async def review_identity(body: IdentityReviewRequest):
                 """UPDATE video_assignments SET review_status = ?,
                    reviewed_at = datetime('now'), reviewed_by = ? WHERE id = ?""",
                 (new_status, body.reviewer, body.assignment_id),
+            )
+
+        if body.action in ("confirm", "reassign") and new_pigeon:
+            _replace_identity_references(
+                conn,
+                assignment["video_id"],
+                assignment["video_obj_id"],
+                old_pigeon,
+                new_pigeon,
             )
 
         conn.execute(
@@ -340,6 +456,14 @@ async def batch_confirm_identities(body: BatchIdentityRequest):
                        reviewed_at = datetime('now'), reviewed_by = ? WHERE id = ?""",
                     (body.reviewer, item.assignment_id),
                 )
+
+            _replace_identity_references(
+                conn,
+                row["video_id"],
+                row["video_obj_id"],
+                old_pigeon,
+                item.pigeon_id,
+            )
 
             conn.execute(
                 """INSERT INTO identity_reviews
@@ -436,7 +560,12 @@ async def mask_edit(body: MaskEditRequest):
         conn.commit()
         edit_id = cur.lastrowid
 
-    return {"edit_id": edit_id, "saved": True}
+    return {
+        "edit_id": edit_id,
+        "saved": True,
+        "applied_to_features": False,
+        "message": "Mask edit was recorded. This project does not store per-frame mask blobs yet.",
+    }
 
 
 # --- Track merge ---
@@ -448,9 +577,32 @@ async def track_merge(body: TrackMergeRequest):
         if not row:
             raise HTTPException(status_code=404, detail=f"Video {body.video_id} not found")
 
+        source_assignment = _assignment_for_obj(conn, body.video_id, body.source_obj_id)
+        target_assignment = _assignment_for_obj(conn, body.video_id, body.target_obj_id)
+        source_label = source_assignment["pigeon_id"] if source_assignment else f"unknown_{body.source_obj_id}"
+        target_label = target_assignment["pigeon_id"] if target_assignment else f"unknown_{body.target_obj_id}"
+
         details = f"merge source={body.source_obj_id} into target={body.target_obj_id} from_frame={body.from_frame}"
         if body.notes:
             details += f" notes={body.notes}"
+
+        frames_affected = _replace_track_label_after_frame(
+            conn,
+            body.video_id,
+            body.from_frame,
+            body.source_obj_id,
+            source_label,
+            target_label,
+        )
+
+        if source_assignment:
+            conn.execute(
+                """UPDATE video_assignments
+                   SET pigeon_id = ?, review_status = 'approved',
+                       match_method = 'manual', reviewed_at = datetime('now'), reviewed_by = ?
+                   WHERE id = ?""",
+                (target_label, body.editor, source_assignment["id"]),
+            )
 
         cur = conn.execute(
             """INSERT INTO track_edits
@@ -460,12 +612,6 @@ async def track_merge(body: TrackMergeRequest):
         )
         conn.commit()
         edit_id = cur.lastrowid
-
-        row = conn.execute(
-            "SELECT COUNT(*) AS cnt FROM features WHERE video_id = ? AND frame_idx >= ?",
-            (body.video_id, body.from_frame),
-        ).fetchone()
-        frames_affected = row["cnt"] if row else 0
 
     return {"edit_id": edit_id, "merged": True, "frames_affected": frames_affected}
 
@@ -480,13 +626,36 @@ async def track_split(body: TrackSplitRequest):
             raise HTTPException(status_code=404, detail=f"Video {body.video_id} not found")
 
         row = conn.execute(
-            "SELECT COALESCE(MAX(new_obj_id), 0) AS max_id FROM track_edits WHERE video_id = ?",
-            (body.video_id,),
+            """SELECT MAX(max_id) AS max_id FROM (
+                   SELECT COALESCE(MAX(new_obj_id), 0) AS max_id FROM track_edits WHERE video_id = ?
+                   UNION ALL
+                   SELECT COALESCE(MAX(video_obj_id), 0) AS max_id FROM video_assignments WHERE video_id = ?
+               )""",
+            (body.video_id, body.video_id),
         ).fetchone()
         new_obj_id = (row["max_id"] or 0) + 1
-        # Ensure new_obj_id is higher than the source
         if new_obj_id <= body.obj_id:
-            new_obj_id = body.obj_id + 1000
+            new_obj_id = body.obj_id + 1
+
+        source_assignment = _assignment_for_obj(conn, body.video_id, body.obj_id)
+        source_label = source_assignment["pigeon_id"] if source_assignment else f"unknown_{body.obj_id}"
+        new_label = f"unknown_{new_obj_id}"
+
+        frames_affected = _replace_track_label_after_frame(
+            conn,
+            body.video_id,
+            body.at_frame,
+            body.obj_id,
+            source_label,
+            new_label,
+        )
+
+        conn.execute(
+            """INSERT INTO video_assignments
+               (video_id, video_obj_id, pigeon_id, confidence, match_method, review_status, assigned_at)
+               VALUES (?, ?, ?, ?, 'manual_split', 'raw', datetime('now'))""",
+            (body.video_id, new_obj_id, new_label, 1.0),
+        )
 
         details = f"split obj={body.obj_id} at frame={body.at_frame}"
         if body.notes:
@@ -506,6 +675,7 @@ async def track_split(body: TrackSplitRequest):
         "original_obj_id": body.obj_id,
         "new_obj_id": new_obj_id,
         "split_at_frame": body.at_frame,
+        "frames_affected": frames_affected,
     }
 
 

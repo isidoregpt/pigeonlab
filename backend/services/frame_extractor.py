@@ -5,6 +5,7 @@ to disk for use by the processing pipeline and the frame viewer endpoint.
 """
 
 import logging
+import os
 from pathlib import Path
 
 import cv2
@@ -27,6 +28,12 @@ class FrameExtractor:
         """
         self._frames_dir = Path(frames_dir)
         self._frames_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            threads = int(os.getenv("PIGEONLAB_OPENCV_THREADS", "32"))
+            if threads > 0:
+                cv2.setNumThreads(threads)
+        except Exception:
+            logger.debug("Could not set OpenCV thread count", exc_info=True)
 
     # ------------------------------------------------------------------
     # Public API

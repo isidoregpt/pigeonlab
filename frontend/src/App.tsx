@@ -3,6 +3,7 @@ import { Routes, Route } from "react-router-dom";
 import Layout from "./components/layout/Layout";
 import ErrorBoundary from "./components/ui/ErrorBoundary";
 import LoadingState from "./components/ui/LoadingState";
+import StartupLoadingScreen from "./components/ui/StartupLoadingScreen";
 
 const Home = lazy(() => import("./pages/Home"));
 const Videos = lazy(() => import("./pages/Videos"));
@@ -18,6 +19,7 @@ const NotFound = lazy(() => import("./pages/NotFound"));
 export default function App() {
   return (
     <ErrorBoundary>
+      <StartupLoadingScreen />
       <Suspense fallback={<LoadingState />}>
         <Routes>
           <Route element={<Layout />}>

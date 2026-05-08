@@ -2,7 +2,7 @@ import csv
 import io
 import uuid
 from datetime import date, timedelta
-from pathlib import Path
+from pathlib import Path, PurePath, PureWindowsPath
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
@@ -178,10 +178,18 @@ async def create_export(body: ExportRequest):
 
 @router.get("/download/{filename}")
 async def download_export(filename: str):
-    filepath = EXPORTS_DIR / filename
+    # Prevent path traversal on both POSIX and Windows path syntaxes.
+    if (
+        PurePath(filename).name != filename
+        or PureWindowsPath(filename).name != filename
+        or Path(filename).is_absolute()
+        or PureWindowsPath(filename).is_absolute()
+    ):
+        raise HTTPException(status_code=400, detail="Invalid filename")
 
-    # Prevent path traversal
-    if ".." in filename or "/" in filename:
+    exports_root = EXPORTS_DIR.resolve()
+    filepath = (exports_root / filename).resolve()
+    if filepath.parent != exports_root:
         raise HTTPException(status_code=400, detail="Invalid filename")
 
     if not filepath.is_file():

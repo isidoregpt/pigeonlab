@@ -17,7 +17,7 @@ export default function AddVideosModal({ onClose, onSuccess }: AddVideosModalPro
   const [step, setStep] = useState(0);
   const [paths, setPaths] = useState<string[]>([""]);
   const [cameraAssignments, setCameraAssignments] = useState<Record<string, string>>({});
-  const [pigeonCount, setPigeonCount] = useState<number>(1);
+  const [pigeonCount, setPigeonCount] = useState<number>(4);
   const [textPrompt, setTextPrompt] = useState("pigeon");
   const [sessionId, setSessionId] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -238,7 +238,7 @@ export default function AddVideosModal({ onClose, onSuccess }: AddVideosModalPro
 
 /* ---------- Step 1: File paths ---------- */
 
-const VALID_VIDEO_EXT = /\.(mp4|avi|mov)$/i;
+const VALID_VIDEO_EXT = /\.(mp4|avi|mov|mkv)$/i;
 
 function hasUnexpectedExtension(path: string): boolean {
   const trimmed = path.trim();
@@ -298,7 +298,7 @@ function Step1({
           </div>
           {hasUnexpectedExtension(p) && (
             <p className="text-[12px] text-warning mt-1">
-              Unexpected extension. Supported formats: .mp4, .avi, .mov
+              Unexpected extension. Supported formats: .mp4, .avi, .mov, .mkv
             </p>
           )}
         </div>

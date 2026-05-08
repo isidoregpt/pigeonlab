@@ -1,122 +1,117 @@
 #!/usr/bin/env pwsh
-# PigeonLab Startup Script (PowerShell)
+# PigeonLab startup script.
 
 $ErrorActionPreference = "Stop"
-
-Write-Host ""
-Write-Host "  ===========================" -ForegroundColor Cyan
-Write-Host "   PigeonLab Startup Script"   -ForegroundColor Cyan
-Write-Host "  ===========================" -ForegroundColor Cyan
-Write-Host ""
-
 $Root = $PSScriptRoot
+$LogDir = Join-Path $Root "data\logs"
+New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
+$Stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+$StartupLog = Join-Path $LogDir "startup-$Stamp.log"
 
-# -----------------------------------------------
-# 1. Check Python
-# -----------------------------------------------
-$python = Get-Command python -ErrorAction SilentlyContinue
-if (-not $python) {
-    Write-Host "[ERROR] Python is not installed or not in PATH." -ForegroundColor Red
-    Write-Host "        Download from https://www.python.org/downloads/"
-    exit 1
+function Write-Startup([string]$Message) {
+    $line = "$(Get-Date -Format o) $Message"
+    $line | Tee-Object -FilePath $StartupLog -Append
 }
-$pyVersion = & python --version 2>&1
-Write-Host "  Found: $pyVersion"
 
-# -----------------------------------------------
-# 2. Check Node
-# -----------------------------------------------
-$node = Get-Command node -ErrorAction SilentlyContinue
-if (-not $node) {
-    Write-Host "[ERROR] Node.js is not installed or not in PATH." -ForegroundColor Red
-    Write-Host "        Download from https://nodejs.org/"
-    exit 1
-}
-$nodeVersion = & node --version 2>&1
-Write-Host "  Found: Node $nodeVersion"
-
-# -----------------------------------------------
-# 3. Create Python venv if needed
-# -----------------------------------------------
-$venvPath = Join-Path $Root "backend\venv"
-if (-not (Test-Path $venvPath)) {
-    Write-Host ""
-    Write-Host "  Creating Python virtual environment..." -ForegroundColor Yellow
-    & python -m venv $venvPath
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "[ERROR] Failed to create virtual environment." -ForegroundColor Red
-        exit 1
+function Import-DotEnv([string]$Path) {
+    if (-not (Test-Path $Path)) {
+        return
+    }
+    Get-Content -LiteralPath $Path | ForEach-Object {
+        $line = $_.Trim()
+        if (-not $line -or $line.StartsWith("#") -or -not $line.Contains("=")) {
+            return
+        }
+        $key, $value = $line.Split("=", 2)
+        $key = $key.Trim()
+        $value = $value.Trim().Trim('"').Trim("'")
+        if ($key) {
+            [Environment]::SetEnvironmentVariable($key, $value, "Process")
+        }
     }
 }
 
-# -----------------------------------------------
-# 4. Install Python dependencies
-# -----------------------------------------------
 Write-Host ""
-Write-Host "  Installing Python dependencies..." -ForegroundColor Yellow
+Write-Host "===========================" -ForegroundColor Cyan
+Write-Host " PigeonLab Startup" -ForegroundColor Cyan
+Write-Host "===========================" -ForegroundColor Cyan
+Write-Host ""
 
-$activateScript = Join-Path $venvPath "Scripts\Activate.ps1"
-if (-not (Test-Path $activateScript)) {
-    # Linux/macOS fallback
-    $activateScript = Join-Path $venvPath "bin/Activate.ps1"
-}
+Import-DotEnv (Join-Path $Root ".env")
+Write-Startup "Loaded .env and starting PigeonLab"
 
-& $activateScript
-& pip install -r (Join-Path $Root "backend\requirements.txt") --quiet
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "[WARNING] Some Python packages may have failed to install." -ForegroundColor Yellow
-}
-
-# -----------------------------------------------
-# 5. Install Node dependencies if needed
-# -----------------------------------------------
-$nodeModules = Join-Path $Root "frontend\node_modules"
-if (-not (Test-Path $nodeModules)) {
-    Write-Host ""
-    Write-Host "  Installing frontend dependencies..." -ForegroundColor Yellow
-    Push-Location (Join-Path $Root "frontend")
-    & npm install
-    Pop-Location
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "[ERROR] npm install failed." -ForegroundColor Red
-        exit 1
+$LoadingManifestScript = Join-Path $Root "scripts\refresh-loading-images.ps1"
+if (Test-Path $LoadingManifestScript) {
+    try {
+        & $LoadingManifestScript -ProjectRoot $Root *> $null
+        Write-Startup "Refreshed loading image manifest"
+    } catch {
+        Write-Startup "Loading image manifest refresh failed: $($_.Exception.Message)"
     }
 }
 
-# -----------------------------------------------
-# 6. Start backend in new terminal
-# -----------------------------------------------
-Write-Host ""
-Write-Host "  Starting FastAPI backend..." -ForegroundColor Green
+$VenvPython = Join-Path $Root "backend\venv\Scripts\python.exe"
+if (-not (Test-Path $VenvPython)) {
+    Write-Host "[ERROR] PigeonLab is not installed yet." -ForegroundColor Red
+    Write-Host "Run install.bat first, then run start.bat again."
+    Write-Startup "Missing virtual environment at $VenvPython"
+    exit 1
+}
 
-$backendDir = Join-Path $Root "backend"
-Start-Process powershell -ArgumentList @(
-    "-NoExit", "-Command",
-    "Set-Location '$backendDir'; & '$activateScript'; python -m uvicorn main:app --reload --port 8000"
-)
+if (-not (Test-Path (Join-Path $Root "frontend\node_modules"))) {
+    Write-Host "[ERROR] Frontend dependencies are missing." -ForegroundColor Red
+    Write-Host "Run install.bat first, then run start.bat again."
+    Write-Startup "Missing frontend node_modules"
+    exit 1
+}
 
-# -----------------------------------------------
-# 7. Start frontend in new terminal
-# -----------------------------------------------
-Write-Host "  Starting Vite frontend..." -ForegroundColor Green
+$BackendPort = if ($env:BACKEND_PORT) { $env:BACKEND_PORT } else { "8000" }
+$FrontendPort = if ($env:FRONTEND_PORT) { $env:FRONTEND_PORT } else { "5173" }
+$BackendDir = Join-Path $Root "backend"
+$FrontendDir = Join-Path $Root "frontend"
+$BackendLog = Join-Path $LogDir "backend-$Stamp.log"
+$FrontendLog = Join-Path $LogDir "frontend-$Stamp.log"
 
-$frontendDir = Join-Path $Root "frontend"
-Start-Process powershell -ArgumentList @(
-    "-NoExit", "-Command",
-    "Set-Location '$frontendDir'; npm run dev"
-)
+$workerCount = if ($env:PIGEONLAB_UVICORN_WORKERS) { [int]$env:PIGEONLAB_UVICORN_WORKERS } else { 1 }
+if ($workerCount -ne 1) {
+    Write-Startup "For GPU model safety, overriding PIGEONLAB_UVICORN_WORKERS=$workerCount to 1"
+    $workerCount = 1
+}
 
-# -----------------------------------------------
-# 8. Done
-# -----------------------------------------------
+Write-Startup "Backend log: $BackendLog"
+Write-Startup "Frontend log: $FrontendLog"
+
+$BackendCommand = @"
+Set-Location '$BackendDir'
+`$env:PYTHONUNBUFFERED='1'
+& '$VenvPython' -m uvicorn main:app --host 127.0.0.1 --port $BackendPort --workers $workerCount *> '$BackendLog'
+"@
+
+$FrontendCommand = @"
+Set-Location '$FrontendDir'
+npm run dev -- --host 127.0.0.1 --port $FrontendPort *> '$FrontendLog'
+"@
+
+Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @(
+    "-NoProfile",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-Command",
+    $BackendCommand
+) | Out-Null
+
+Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @(
+    "-NoProfile",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-Command",
+    $FrontendCommand
+) | Out-Null
+
+Write-Host "PigeonLab is starting." -ForegroundColor Green
+Write-Host "Frontend: http://localhost:$FrontendPort" -ForegroundColor White
+Write-Host "Backend:  http://localhost:$BackendPort" -ForegroundColor White
+Write-Host "Logs:     $LogDir" -ForegroundColor White
 Write-Host ""
-Write-Host "  ============================================" -ForegroundColor Cyan
-Write-Host "   PigeonLab is starting..."                    -ForegroundColor Cyan
-Write-Host ""                                               -ForegroundColor Cyan
-Write-Host "   Backend:  http://localhost:8000"              -ForegroundColor White
-Write-Host "   Frontend: http://localhost:5173"              -ForegroundColor White
-Write-Host "   API docs: http://localhost:8000/docs"         -ForegroundColor White
-Write-Host "  ============================================" -ForegroundColor Cyan
-Write-Host ""
-Write-Host "  Tip: Run 'python backend\seed_data.py' to load sample data." -ForegroundColor DarkGray
-Write-Host ""
+Write-Host "If something goes wrong, run diagnostics.bat and share the generated zip." -ForegroundColor DarkGray
+Write-Startup "Startup commands launched"

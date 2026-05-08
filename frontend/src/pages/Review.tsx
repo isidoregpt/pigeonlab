@@ -197,7 +197,7 @@ function IdentityReview({ videoId }: { videoId: number }) {
       <div className="bg-surface border border-border rounded-xl overflow-hidden">
         <div className="bg-black aspect-video flex items-center justify-center">
           <img
-            src={getFrameUrl(videoId, current.video_obj_id, true)}
+            src={getFrameUrl(videoId, current.sample_frame_idx ?? 0, true)}
             alt={`Pigeon assignment ${currentIdx + 1}`}
             className="max-w-full max-h-full object-contain"
           />

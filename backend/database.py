@@ -1,4 +1,5 @@
 import sqlite3
+import os
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -49,6 +50,7 @@ def init_db():
             processed_at TEXT,
             review_status TEXT DEFAULT 'raw',
             processing_status TEXT DEFAULT 'queued',
+            processing_error TEXT,
             model_version TEXT,
             config_hash TEXT,
             notes TEXT
@@ -237,6 +239,28 @@ def init_db():
             completed_at TEXT
         );
 
+        CREATE TABLE IF NOT EXISTS ai_observations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            video_id INTEGER NOT NULL REFERENCES videos(video_id),
+            frame_idx INTEGER,
+            pigeon_id TEXT,
+            observation_type TEXT NOT NULL,
+            label TEXT,
+            confidence REAL,
+            zone TEXT,
+            bbox_json TEXT,
+            source_model TEXT,
+            review_status TEXT DEFAULT 'raw',
+            details TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT,
+            updated_at TEXT DEFAULT (datetime('now'))
+        );
+
         CREATE TABLE IF NOT EXISTS benchmark_results (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             subsystem TEXT NOT NULL,
@@ -312,6 +336,12 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_rt_video ON review_tasks(video_id);
         CREATE INDEX IF NOT EXISTS idx_rt_type ON review_tasks(task_type);
 
+        -- Indexes: ai_observations
+        CREATE INDEX IF NOT EXISTS idx_ai_obs_video_frame ON ai_observations(video_id, frame_idx);
+        CREATE INDEX IF NOT EXISTS idx_ai_obs_pigeon ON ai_observations(pigeon_id);
+        CREATE INDEX IF NOT EXISTS idx_ai_obs_type ON ai_observations(observation_type);
+        CREATE INDEX IF NOT EXISTS idx_ai_obs_review ON ai_observations(review_status);
+
         -- Indexes: benchmark_results
         CREATE INDEX IF NOT EXISTS idx_bench_subsystem ON benchmark_results(subsystem);
         CREATE INDEX IF NOT EXISTS idx_bench_model ON benchmark_results(model_version);
@@ -321,11 +351,26 @@ def init_db():
     for stmt in [
         "ALTER TABLE qc_flags ADD COLUMN created_at TEXT",
         "ALTER TABLE video_assignments ADD COLUMN created_at TEXT",
+        "ALTER TABLE videos ADD COLUMN processing_error TEXT",
     ]:
         try:
             cur.execute(stmt)
         except Exception:
             pass  # column already exists
+
+    default_settings = {
+        "gemma_review_mode": os.getenv("PIGEONLAB_GEMMA_REVIEW_MODE", "off"),
+        "gemma_model": os.getenv("PIGEONLAB_GEMMA_MODEL", "gemma4:e4b"),
+        "gemma_base_url": os.getenv("PIGEONLAB_GEMMA_BASE_URL", "http://localhost:11434"),
+        "gemma_sample_interval_seconds": os.getenv("PIGEONLAB_GEMMA_SAMPLE_SECONDS", "15"),
+        "gemma_max_frames_per_video": os.getenv("PIGEONLAB_GEMMA_MAX_FRAMES", "20"),
+        "gemma_confidence_threshold": os.getenv("PIGEONLAB_GEMMA_CONFIDENCE_THRESHOLD", "0.65"),
+    }
+    for key, value in default_settings.items():
+        cur.execute(
+            "INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)",
+            (key, value),
+        )
 
     conn.commit()
     conn.close()

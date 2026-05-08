@@ -35,8 +35,54 @@ export function processVideos(payload: ProcessPayload) {
   );
 }
 
+export interface FfmpegStatus {
+  available: boolean;
+  ffmpeg_path: string | null;
+  ffprobe_path: string | null;
+  default_input_dir: string;
+  default_output_dir: string;
+  default_archive_dir: string;
+  chunk_seconds: number;
+  errors: string[];
+}
+
+export interface ImportFolderPayload {
+  input_dir?: string;
+  output_dir?: string;
+  archive_dir?: string;
+  chunk_seconds?: number;
+  archive_originals?: boolean;
+  process_now?: boolean;
+  expected_pigeon_count?: number;
+  text_prompt?: string;
+  session_prefix?: string;
+  limit?: number;
+}
+
+export interface ImportFolderResult {
+  input_dir: string;
+  output_dir: string;
+  archive_dir: string;
+  chunk_seconds: number;
+  videos_found: number;
+  videos_imported: number;
+  chunks_created: number;
+  videos_queued: number;
+  job_id: string | null;
+  status: string;
+  errors: Array<{ source_path: string; error: string }>;
+}
+
+export function getFfmpegStatus() {
+  return get<FfmpegStatus>("/videos/ffmpeg/status");
+}
+
+export function importVideoFolder(payload: ImportFolderPayload) {
+  return post<ImportFolderResult>("/videos/import-folder", payload);
+}
+
 export function getVideoStatus(id: number) {
-  return get<{ status: string; progress: number }>(`/videos/${id}/status`);
+  return get<{ status: string; progress: number; error?: string | null }>(`/videos/${id}/status`);
 }
 
 export function updateVideoReview(id: number, payload: { review_status: string; reviewer: string }) {
@@ -54,6 +100,13 @@ export function getFrameUrl(videoId: number, frameNum: number, overlay?: boolean
 export function getVideoFeatures(videoId: number, frameIdx: number) {
   return get<import("../types").Feature[]>(
     `/videos/${videoId}/features?frame_idx=${frameIdx}`,
+  );
+}
+
+export function getVideoAIObservations(videoId: number, frameIdx?: number) {
+  const params = frameIdx === undefined ? "" : `?frame_idx=${frameIdx}`;
+  return get<import("../types").AIObservation[]>(
+    `/videos/${videoId}/ai-observations${params}`,
   );
 }
 
