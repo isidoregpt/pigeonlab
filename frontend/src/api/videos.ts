@@ -1,4 +1,4 @@
-import { get, post, put } from "./client";
+import { get, post, postForm, put } from "./client";
 import type { Video } from "../types";
 
 interface VideosResponse {
@@ -33,6 +33,39 @@ export function processVideos(payload: ProcessPayload) {
     "/videos/process",
     payload,
   );
+}
+
+interface UploadVideosPayload {
+  files: File[];
+  camera_assignments?: Record<string, string>;
+  text_prompt?: string;
+  expected_pigeon_count?: number;
+  session_id?: string;
+  process_now?: boolean;
+}
+
+export interface UploadVideosResult {
+  job_id: string | null;
+  status: string;
+  videos_uploaded: number;
+  videos_queued: number;
+}
+
+export function uploadVideos(payload: UploadVideosPayload) {
+  const form = new FormData();
+  for (const file of payload.files) {
+    form.append("files", file, file.name);
+  }
+  form.append("process_now", String(payload.process_now ?? true));
+  if (payload.camera_assignments) {
+    form.append("camera_assignments", JSON.stringify(payload.camera_assignments));
+  }
+  if (payload.text_prompt) form.append("text_prompt", payload.text_prompt);
+  if (payload.expected_pigeon_count !== undefined) {
+    form.append("expected_pigeon_count", String(payload.expected_pigeon_count));
+  }
+  if (payload.session_id) form.append("session_id", payload.session_id);
+  return postForm<UploadVideosResult>("/videos/upload", form);
 }
 
 export interface FfmpegStatus {

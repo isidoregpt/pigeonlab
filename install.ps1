@@ -91,8 +91,8 @@ function Test-IsWindows {
     return [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT
 }
 
-function Invoke-Python($PythonCmd, [string[]]$Args) {
-    & $PythonCmd.Exe @($PythonCmd.Args) @Args
+function Invoke-Python($PythonCmd, [string[]]$AdditionalArgs) {
+    & $PythonCmd.Exe @($PythonCmd.Args) @AdditionalArgs
 }
 
 function Invoke-Checked([string]$Label, [scriptblock]$Command) {
@@ -225,11 +225,11 @@ try {
 
     Write-Step "Installing Python GPU stack"
     Invoke-Checked "Upgrade pip tooling" {
-        & $VenvPython -m pip install --upgrade pip setuptools wheel
+        & $VenvPython -m pip install --upgrade pip "setuptools<81" wheel
     }
-    $TorchIndexUrl = if ($env:PIGEONLAB_TORCH_INDEX_URL) { $env:PIGEONLAB_TORCH_INDEX_URL } else { "https://download.pytorch.org/whl/cu128" }
+    $TorchIndexUrl = if ($env:PIGEONLAB_TORCH_INDEX_URL) { $env:PIGEONLAB_TORCH_INDEX_URL } else { "https://download.pytorch.org/whl/cu126" }
     Invoke-Checked "Install CUDA PyTorch stack" {
-        & $VenvPython -m pip install --upgrade torch torchvision torchaudio --index-url $TorchIndexUrl
+        & $VenvPython -m pip install --no-cache-dir --force-reinstall torch torchvision torchaudio --index-url $TorchIndexUrl
     }
     Invoke-Checked "Install backend requirements" {
         & $VenvPython -m pip install -r (Join-Path $Root "backend\requirements.txt")
@@ -244,7 +244,7 @@ try {
         }
     }
     Invoke-Checked "Align SAM3 Windows dependencies" {
-        & $VenvPython -m pip install --upgrade "numpy>=1.26,<2" "opencv-python>=4.8.0,<4.11" "einops>=0.7.0" "psutil"
+        & $VenvPython -m pip install --upgrade "numpy>=1.26,<2" "opencv-python>=4.8.0,<4.11" "einops>=0.7.0" "psutil" "pycocotools>=2.0.11"
     }
     Invoke-Checked "Validate Python dependency graph" {
         & $VenvPython -m pip check

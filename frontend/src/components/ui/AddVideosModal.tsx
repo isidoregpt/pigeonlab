@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { X, FolderOpen, ChevronRight, Check, Loader2 } from "lucide-react";
-import { processVideos } from "../../api/videos";
+import { processVideos, uploadVideos } from "../../api/videos";
 
 interface AddVideosModalProps {
   onClose: () => void;
@@ -12,10 +12,20 @@ const CAMERA_OPTIONS = ["Overhead", "Side", "Corner", "Other"] as const;
 
 const STEPS = ["Select Files", "Camera Setup", "Processing Options"] as const;
 
+interface CameraItem {
+  key: string;
+  label: string;
+}
+
+function fileKey(file: File): string {
+  return `upload:${file.name}:${file.size}:${file.lastModified}`;
+}
+
 export default function AddVideosModal({ onClose, onSuccess }: AddVideosModalProps) {
   const queryClient = useQueryClient();
   const [step, setStep] = useState(0);
   const [paths, setPaths] = useState<string[]>([""]);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [cameraAssignments, setCameraAssignments] = useState<Record<string, string>>({});
   const [pigeonCount, setPigeonCount] = useState<number>(4);
   const [textPrompt, setTextPrompt] = useState("pigeon");
@@ -25,6 +35,7 @@ export default function AddVideosModal({ onClose, onSuccess }: AddVideosModalPro
   const [success, setSuccess] = useState(false);
   const overlayRef = useRef<HTMLDivElement>(null);
   const firstInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Focus trap & ESC to close
   useEffect(() => {
@@ -56,31 +67,82 @@ export default function AddVideosModal({ onClose, onSuccess }: AddVideosModalPro
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
 
-  const validPaths = paths.filter((p) => p.trim() !== "");
+  const validPaths = paths.map((p) => p.trim()).filter(Boolean);
+  const cameraItems: CameraItem[] = [
+    ...validPaths.map((path) => ({
+      key: path,
+      label: path.split(/[/\\]/).pop() || path,
+    })),
+    ...selectedFiles.map((file) => ({
+      key: fileKey(file),
+      label: file.name,
+    })),
+  ];
+  const selectedCount = validPaths.length + selectedFiles.length;
 
   const addPath = () => setPaths((prev) => [...prev, ""]);
   const updatePath = (idx: number, val: string) =>
     setPaths((prev) => prev.map((p, i) => (i === idx ? val : p)));
   const removePath = (idx: number) =>
     setPaths((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== idx)));
+  const addSelectedFiles = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const incoming = Array.from(files);
+    setSelectedFiles((prev) => {
+      const seen = new Set(prev.map(fileKey));
+      return [...prev, ...incoming.filter((file) => !seen.has(fileKey(file)))];
+    });
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+  const removeSelectedFile = (key: string) => {
+    setSelectedFiles((prev) => prev.filter((file) => fileKey(file) !== key));
+    setCameraAssignments((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
 
   const handleProcess = useCallback(async () => {
     setError(null);
     setSubmitting(true);
     try {
-      const cameraMap: Record<string, string> = {};
+      const pathCameraMap: Record<string, string> = {};
       for (const p of validPaths) {
         if (cameraAssignments[p]) {
-          cameraMap[p] = cameraAssignments[p];
+          pathCameraMap[p] = cameraAssignments[p];
         }
       }
-      await processVideos({
-        video_paths: validPaths,
-        camera_assignments: Object.keys(cameraMap).length > 0 ? cameraMap : undefined,
+      const uploadCameraMap: Record<string, string> = {};
+      for (const file of selectedFiles) {
+        const key = fileKey(file);
+        if (cameraAssignments[key]) {
+          uploadCameraMap[file.name] = cameraAssignments[key];
+        }
+      }
+      const sharedOptions = {
         expected_pigeon_count: pigeonCount,
         text_prompt: textPrompt.trim() || "pigeon",
         session_id: sessionId.trim() || undefined,
-      });
+      };
+      if (selectedFiles.length > 0) {
+        await uploadVideos({
+          files: selectedFiles,
+          camera_assignments:
+            Object.keys(uploadCameraMap).length > 0 ? uploadCameraMap : undefined,
+          ...sharedOptions,
+        });
+      }
+      if (validPaths.length > 0) {
+        await processVideos({
+          video_paths: validPaths,
+          camera_assignments:
+            Object.keys(pathCameraMap).length > 0 ? pathCameraMap : undefined,
+          ...sharedOptions,
+        });
+      }
       queryClient.invalidateQueries({ queryKey: ["videos"] });
       queryClient.invalidateQueries({ queryKey: ["stats-today"] });
       setSuccess(true);
@@ -94,10 +156,10 @@ export default function AddVideosModal({ onClose, onSuccess }: AddVideosModalPro
     } finally {
       setSubmitting(false);
     }
-  }, [validPaths, cameraAssignments, pigeonCount, textPrompt, onSuccess]);
+  }, [validPaths, selectedFiles, cameraAssignments, pigeonCount, textPrompt, sessionId, onSuccess]);
 
   const canAdvance =
-    step === 0 ? validPaths.length > 0 : step === 1 ? true : true;
+    step === 0 ? selectedCount > 0 : step === 1 ? true : true;
 
   return (
     <div
@@ -161,20 +223,24 @@ export default function AddVideosModal({ onClose, onSuccess }: AddVideosModalPro
                 Processing started!
               </p>
               <p className="text-[12px] text-text-secondary mt-1">
-                {validPaths.length} video{validPaths.length !== 1 ? "s" : ""} queued for processing.
+                {selectedCount} video{selectedCount !== 1 ? "s" : ""} queued for processing.
               </p>
             </div>
           ) : step === 0 ? (
             <Step1
               paths={paths}
+              selectedFiles={selectedFiles}
               updatePath={updatePath}
               removePath={removePath}
+              removeSelectedFile={removeSelectedFile}
               addPath={addPath}
               firstInputRef={firstInputRef}
+              fileInputRef={fileInputRef}
+              addSelectedFiles={addSelectedFiles}
             />
           ) : step === 1 ? (
             <Step2
-              paths={validPaths}
+              items={cameraItems}
               cameraAssignments={cameraAssignments}
               setCameraAssignments={setCameraAssignments}
             />
@@ -216,16 +282,16 @@ export default function AddVideosModal({ onClose, onSuccess }: AddVideosModalPro
             ) : (
               <button
                 onClick={handleProcess}
-                disabled={submitting || validPaths.length === 0}
+                disabled={submitting || selectedCount === 0}
                 className="flex items-center gap-1.5 px-4 py-2 bg-accent text-white text-sm font-medium rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {submitting ? (
                   <>
                     <Loader2 size={14} className="animate-spin" />
-                    Processing…
+                    Processing...
                   </>
                 ) : (
-                  "Process Videos →"
+                  "Process Videos ->"
                 )}
               </button>
             )}
@@ -247,22 +313,69 @@ function hasUnexpectedExtension(path: string): boolean {
 
 function Step1({
   paths,
+  selectedFiles,
   updatePath,
   removePath,
+  removeSelectedFile,
   addPath,
   firstInputRef,
+  fileInputRef,
+  addSelectedFiles,
 }: {
   paths: string[];
+  selectedFiles: File[];
   updatePath: (i: number, v: string) => void;
   removePath: (i: number) => void;
+  removeSelectedFile: (key: string) => void;
   addPath: () => void;
   firstInputRef: React.RefObject<HTMLInputElement | null>;
+  fileInputRef: React.RefObject<HTMLInputElement | null>;
+  addSelectedFiles: (files: FileList | null) => void;
 }) {
   return (
     <div className="space-y-3">
       <p className="text-sm text-text-secondary">
-        Enter the file paths to your video files. These should be the full paths on your local machine.
+        Choose video files or enter full file paths on this workstation.
       </p>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".mp4,.avi,.mov,.mkv,video/*"
+        multiple
+        className="hidden"
+        onChange={(e) => addSelectedFiles(e.target.files)}
+      />
+      <button
+        type="button"
+        onClick={() => fileInputRef.current?.click()}
+        className="inline-flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium text-text-primary hover:bg-bg transition-colors"
+      >
+        <FolderOpen size={16} />
+        Choose video files
+      </button>
+      {selectedFiles.length > 0 && (
+        <div className="space-y-2">
+          {selectedFiles.map((file) => {
+            const key = fileKey(file);
+            return (
+              <div
+                key={key}
+                className="flex items-center justify-between gap-3 py-1.5 px-2 bg-bg rounded-lg"
+              >
+                <span className="text-sm text-text-primary truncate">{file.name}</span>
+                <button
+                  type="button"
+                  onClick={() => removeSelectedFile(key)}
+                  className="p-1 text-text-secondary hover:text-error transition-colors"
+                  aria-label="Remove selected file"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
       {paths.map((p, i) => (
         <div key={i}>
           <div className="flex items-center gap-2">
@@ -280,8 +393,9 @@ function Step1({
             />
             <button
               type="button"
+              onClick={() => fileInputRef.current?.click()}
               className="px-2.5 py-2 border border-border rounded-lg text-text-secondary hover:bg-bg transition-colors"
-              title="Browse (placeholder)"
+              title="Choose video files"
               aria-label="Browse files"
             >
               <FolderOpen size={16} />
@@ -316,11 +430,11 @@ function Step1({
 /* ---------- Step 2: Camera assignment ---------- */
 
 function Step2({
-  paths,
+  items,
   cameraAssignments,
   setCameraAssignments,
 }: {
-  paths: string[];
+  items: CameraItem[];
   cameraAssignments: Record<string, string>;
   setCameraAssignments: React.Dispatch<React.SetStateAction<Record<string, string>>>;
 }) {
@@ -329,20 +443,18 @@ function Step2({
       <p className="text-sm text-text-secondary">
         Assign a camera angle for each video. This helps the system choose the right tracking model.
       </p>
-      {paths.map((p) => {
-        const filename = p.split(/[/\\]/).pop() || p;
-        return (
+      {items.map((item) => (
           <div
-            key={p}
+            key={item.key}
             className="flex items-center justify-between gap-3 py-2"
           >
             <span className="text-sm text-text-primary truncate flex-1">
-              {filename}
+              {item.label}
             </span>
             <select
-              value={cameraAssignments[p] ?? "Overhead"}
+              value={cameraAssignments[item.key] ?? "Overhead"}
               onChange={(e) =>
-                setCameraAssignments((prev) => ({ ...prev, [p]: e.target.value }))
+                setCameraAssignments((prev) => ({ ...prev, [item.key]: e.target.value }))
               }
               className="px-3 py-1.5 bg-bg border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-colors"
             >
@@ -353,8 +465,7 @@ function Step2({
               ))}
             </select>
           </div>
-        );
-      })}
+      ))}
     </div>
   );
 }
