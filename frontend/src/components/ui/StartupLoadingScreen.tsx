@@ -14,6 +14,10 @@ type LoadingManifest = {
 const MANIFEST_URL = "/loading/manifest.json";
 const MIN_DURATION_MS = 2600;
 const FADE_OUT_MS = 900;
+const DEFAULT_IMAGES: LoadingImage[] = [
+  { src: "/loading/HAL.PNG", caption: "HAL" },
+  { src: "/loading/WALLE.PNG", caption: "WALLE" },
+];
 
 function normalizeImages(manifest: LoadingManifest): LoadingImage[] {
   return (manifest.images ?? [])
@@ -21,11 +25,26 @@ function normalizeImages(manifest: LoadingManifest): LoadingImage[] {
     .filter((item) => Boolean(item.src));
 }
 
+function rotateImages(images: LoadingImage[]): LoadingImage[] {
+  if (images.length <= 1) return images;
+  const offset = Math.floor(Math.random() * images.length);
+  return [...images.slice(offset), ...images.slice(0, offset)];
+}
+
+function durationFor(images: LoadingImage[], manifest?: LoadingManifest | null): number {
+  const perImage = Math.max(2.8, manifest?.durationSecondsPerImage ?? 4.5);
+  const maxDuration = Math.max(6, manifest?.maxDurationSeconds ?? 24);
+  return Math.max(
+    MIN_DURATION_MS,
+    Math.min(maxDuration * 1000, images.length * perImage * 1000),
+  );
+}
+
 export default function StartupLoadingScreen() {
-  const [images, setImages] = useState<LoadingImage[]>([]);
-  const [durationMs, setDurationMs] = useState(MIN_DURATION_MS);
+  const [images, setImages] = useState<LoadingImage[]>(() => rotateImages(DEFAULT_IMAGES));
+  const [durationMs, setDurationMs] = useState(() => durationFor(DEFAULT_IMAGES));
   const [elapsedMs, setElapsedMs] = useState(0);
-  const [ready, setReady] = useState(false);
+  const [ready, setReady] = useState(true);
   const [dismissed, setDismissed] = useState(false);
   const [fading, setFading] = useState(false);
 
@@ -37,23 +56,18 @@ export default function StartupLoadingScreen() {
       .then((manifest: LoadingManifest | null) => {
         if (cancelled) return;
         const loadedImages = manifest ? normalizeImages(manifest) : [];
-        if (loadedImages.length === 0) {
-          setDismissed(true);
-          return;
-        }
+        const nextImages = loadedImages.length > 0 ? loadedImages : DEFAULT_IMAGES;
 
-        const perImage = Math.max(2.8, manifest?.durationSecondsPerImage ?? 4.5);
-        const maxDuration = Math.max(6, manifest?.maxDurationSeconds ?? 24);
-        const total = Math.max(
-          MIN_DURATION_MS,
-          Math.min(maxDuration * 1000, loadedImages.length * perImage * 1000),
-        );
-
-        setImages(loadedImages);
-        setDurationMs(total);
+        setImages(rotateImages(nextImages));
+        setDurationMs(durationFor(nextImages, manifest));
         setReady(true);
       })
-      .catch(() => setDismissed(true));
+      .catch(() => {
+        if (cancelled) return;
+        setImages(rotateImages(DEFAULT_IMAGES));
+        setDurationMs(durationFor(DEFAULT_IMAGES));
+        setReady(true);
+      });
 
     return () => {
       cancelled = true;
