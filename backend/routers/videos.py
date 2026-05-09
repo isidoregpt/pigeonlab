@@ -1,11 +1,12 @@
 import asyncio
 import io
+import json
 import logging
 import uuid
 from enum import Enum
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -18,6 +19,8 @@ from utils import get_default_reviewer
 router = APIRouter()
 
 DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
+UPLOADS_DIR = DATA_DIR / "videos" / "uploads"
+VIDEO_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv"}
 
 _processing_jobs: dict[str, asyncio.Task] = {}
 _processing_job_results: dict[str, dict] = {}
@@ -92,6 +95,19 @@ def _import_session_id(prefix: str, source_stem: str) -> str:
     return f"{clean_prefix}_{clean_stem}" if clean_prefix else clean_stem
 
 
+def _form_bool(value, default: bool = True) -> bool:
+    if value is None:
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _form_int(value, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 # --- Endpoints ---
 
 @router.get("/sessions")
@@ -142,6 +158,109 @@ async def list_videos(
 @router.get("/ffmpeg/status")
 async def ffmpeg_status():
     return get_ffmpeg_status()
+
+
+@router.post("/upload")
+async def upload_videos(request: Request):
+    form = await request.form()
+    uploads = [
+        value
+        for _key, value in form.multi_items()
+        if hasattr(value, "filename") and hasattr(value, "read")
+    ]
+    if not uploads:
+        raise HTTPException(status_code=400, detail="No video files were uploaded.")
+
+    process_now = _form_bool(form.get("process_now"), True)
+    if process_now:
+        _require_sam3_ready()
+
+    UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+    uploaded_entries: list[dict] = []
+    invalid_names: list[str] = []
+
+    for upload in uploads:
+        original_name = Path(upload.filename or "video.mp4").name
+        suffix = Path(original_name).suffix.lower()
+        if suffix not in VIDEO_EXTENSIONS:
+            invalid_names.append(original_name)
+            continue
+
+        safe_name = f"{uuid.uuid4().hex[:8]}_{original_name}"
+        destination = UPLOADS_DIR / safe_name
+        with destination.open("wb") as out_file:
+            while True:
+                chunk = await upload.read(1024 * 1024)
+                if not chunk:
+                    break
+                out_file.write(chunk)
+        uploaded_entries.append(
+            {
+                "video_path": str(destination.resolve()),
+                "video_name": original_name,
+            }
+        )
+
+    if invalid_names:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported video format(s): {', '.join(invalid_names)}",
+        )
+    if not uploaded_entries:
+        raise HTTPException(status_code=400, detail="No supported video files were uploaded.")
+
+    text_prompt = str(form.get("text_prompt") or "pigeon").strip() or "pigeon"
+    expected_pigeon_count = max(0, _form_int(form.get("expected_pigeon_count"), 4))
+    camera_assignments: dict[str, str] = {}
+    raw_assignments = form.get("camera_assignments")
+    if raw_assignments:
+        try:
+            parsed_assignments = json.loads(str(raw_assignments))
+            if isinstance(parsed_assignments, dict):
+                camera_assignments = {
+                    str(key): str(value) for key, value in parsed_assignments.items()
+                }
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="camera_assignments must be valid JSON.")
+    default_camera_type = str(form.get("camera_type") or form.get("camera") or "Uploaded video")
+    session_id = str(form.get("session_id") or "").strip()
+
+    job_id: str | None = None
+    queued = 0
+    if process_now:
+        with get_db() as conn:
+            job_id = str(uuid.uuid4())
+            for entry in uploaded_entries:
+                camera_type = camera_assignments.get(entry["video_name"], default_camera_type)
+                cursor = conn.execute(
+                    """INSERT INTO videos
+                       (video_name, session_id, camera_type, processing_status, processing_error)
+                       VALUES (?, ?, ?, 'queued', NULL)""",
+                    (entry["video_name"], session_id, camera_type),
+                )
+                entry["video_id"] = cursor.lastrowid
+                queued += 1
+            conn.commit()
+
+        video_entries = [
+            {
+                "video_id": entry["video_id"],
+                "video_path": entry["video_path"],
+                "text_prompt": text_prompt,
+                "expected_pigeon_count": expected_pigeon_count,
+            }
+            for entry in uploaded_entries
+        ]
+        task = asyncio.create_task(_run_processing_job(job_id, video_entries))
+        _processing_jobs[job_id] = task
+
+    return {
+        "job_id": job_id,
+        "status": "queued" if process_now else "uploaded",
+        "videos_uploaded": len(uploaded_entries),
+        "videos_queued": queued,
+        "uploaded_files": uploaded_entries,
+    }
 
 
 @router.post("/import-folder")
@@ -278,7 +397,7 @@ async def process_videos(req: ProcessRequest):
         if not path.is_file():
             missing_paths.append(raw_path)
             continue
-        if path.suffix.lower() not in {".mp4", ".avi", ".mov", ".mkv"}:
+        if path.suffix.lower() not in VIDEO_EXTENSIONS:
             invalid_ext.append(raw_path)
             continue
         video_path_entries.append((raw_path, str(path.resolve())))

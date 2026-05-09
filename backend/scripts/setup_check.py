@@ -132,12 +132,12 @@ def run_checks() -> None:
         from sam3.model_builder import build_sam3_predictor  # noqa: F401
 
         check("SAM3.1 native package", True, "build_sam3_predictor found")
-    except ImportError:
+    except ImportError as exc:
         check(
             "SAM3.1 native package",
             False,
-            "Not installed or too old",
-            "pip install git+https://github.com/facebookresearch/sam3.git",
+            str(exc),
+            "pip install git+https://github.com/facebookresearch/sam3.git && pip install pycocotools",
         )
 
     try:
@@ -156,6 +156,7 @@ def run_checks() -> None:
         ("huggingface_hub", "huggingface_hub", "pip install huggingface_hub>=0.20.0"),
         ("httpx", "httpx", "pip install httpx"),
         ("einops", "einops", "pip install einops"),
+        ("pycocotools", "pycocotools", "pip install pycocotools"),
         ("psutil", "psutil", "pip install psutil"),
     ]:
         try:

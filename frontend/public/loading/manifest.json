@@ -2,6 +2,13 @@
     "durationSecondsPerImage":  4.5,
     "maxDurationSeconds":  24,
     "images":  [
-
+                   {
+                       "src":  "/loading/HAL.PNG",
+                       "caption":  "HAL"
+                   },
+                   {
+                       "src":  "/loading/WALLE.PNG",
+                       "caption":  "WALLE"
+                   }
                ]
 }
