@@ -649,15 +649,38 @@ class SAM3Wrapper:
         return results
 
     def close_video_session(self, session_id: str) -> None:
-        if self._using_native and self._video_predictor is not None:
-            try:
-                self._video_predictor.handle_request(
-                    request={"type": "close_session", "session_id": session_id},
-                )
-            except Exception:
-                logger.debug("SAM3 native close_session ignored for %s", session_id, exc_info=True)
+        try:
+            if self._using_native and self._video_predictor is not None:
+                try:
+                    self._video_predictor.handle_request(
+                        request={"type": "close_session", "session_id": session_id},
+                    )
+                except Exception:
+                    logger.debug("SAM3 native close_session ignored for %s", session_id, exc_info=True)
+                return
+            self._video_sessions.pop(session_id, None)
+        finally:
+            self._empty_cuda_cache(f"after close_video_session session_id={session_id}")
+
+    def _empty_cuda_cache(self, reason: str) -> None:
+        if not TORCH_AVAILABLE or torch is None:
             return
-        self._video_sessions.pop(session_id, None)
+        cuda = getattr(torch, "cuda", None)
+        if cuda is None or not cuda.is_available():
+            return
+        before_allocated = cuda.memory_allocated()
+        before_reserved = cuda.memory_reserved()
+        cuda.empty_cache()
+        after_allocated = cuda.memory_allocated()
+        after_reserved = cuda.memory_reserved()
+        logger.info(
+            "SAM3 CUDA cleanup %s allocated_gb %.2f -> %.2f reserved_gb %.2f -> %.2f",
+            reason,
+            before_allocated / (1024 ** 3),
+            after_allocated / (1024 ** 3),
+            before_reserved / (1024 ** 3),
+            after_reserved / (1024 ** 3),
+        )
 
     @staticmethod
     def _extract_frame_idx(packet: dict, fallback: int) -> int:

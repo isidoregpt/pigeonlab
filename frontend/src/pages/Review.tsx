@@ -4,8 +4,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ChevronRight, Check, AlertTriangle, Loader2, SkipForward } from "lucide-react";
 import {
   getNextVideoForIdentityReview,
+  getChunkCarryoverSuggestions,
   getUnconfirmedIdentities,
   reviewIdentity,
+  applyChunkCarryoverIdentities,
   batchConfirmIdentities,
   getQCFlags,
   reviewQCFlag,
@@ -86,6 +88,11 @@ function IdentityReview({ videoId }: { videoId: number }) {
     queryFn: () => getUnconfirmedIdentities(videoId),
   });
 
+  const carryoverQuery = useQuery({
+    queryKey: ["identity-chunk-carryover", videoId],
+    queryFn: () => getChunkCarryoverSuggestions(videoId),
+  });
+
   const pigeonsQuery = useQuery({
     queryKey: ["pigeons"],
     queryFn: getPigeons,
@@ -128,6 +135,22 @@ function IdentityReview({ videoId }: { videoId: number }) {
     onError: () => {
       setPendingPigeonId(null);
       toast.error("Failed to confirm identity. Please try again.");
+    },
+  });
+
+  const carryoverMutation = useMutation({
+    mutationFn: () => applyChunkCarryoverIdentities(videoId),
+    onSuccess: (result) => {
+      toast.success(`Applied ${result.applied} identities from the previous chunk`);
+      queryClient.invalidateQueries({ queryKey: ["unconfirmed-identities", videoId] });
+      queryClient.invalidateQueries({ queryKey: ["identity-chunk-carryover", videoId] });
+      queryClient.invalidateQueries({ queryKey: ["attention-count"] });
+      queryClient.invalidateQueries({ queryKey: ["attention-items"] });
+      queryClient.invalidateQueries({ queryKey: ["stats-today"] });
+      setCurrentIdx(0);
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : "Could not apply previous chunk identities");
     },
   });
 
@@ -192,6 +215,33 @@ function IdentityReview({ videoId }: { videoId: number }) {
   return (
     <div className="max-w-3xl space-y-6">
       <h1 className="text-xl font-bold text-text-primary">Identity Review</h1>
+
+      {carryoverQuery.data?.eligible && carryoverQuery.data.suggestions.length > 0 && (
+        <div className="bg-accent/5 border border-accent/20 rounded-xl p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-text-primary">
+              Chunk {carryoverQuery.data.current_video.chunk_index ?? "?"} of{" "}
+              {carryoverQuery.data.current_video.chunk_count ?? "?"}
+            </p>
+            <p className="text-[12px] text-text-secondary mt-1">
+              Copy {carryoverQuery.data.suggestions.length} reviewed identities from{" "}
+              {carryoverQuery.data.previous_video?.video_name ?? "the previous chunk"}.
+            </p>
+          </div>
+          <button
+            onClick={() => carryoverMutation.mutate()}
+            disabled={carryoverMutation.isPending || confirmMutation.isPending}
+            className="inline-flex items-center justify-center gap-2 px-3 py-2 bg-accent text-white text-[12px] font-semibold rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-50"
+          >
+            {carryoverMutation.isPending ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <Check size={14} />
+            )}
+            Same as previous chunk
+          </button>
+        </div>
+      )}
 
       {/* Frame preview */}
       <div className="bg-surface border border-border rounded-xl overflow-hidden">

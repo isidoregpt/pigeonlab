@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, Camera, Film, Loader2, Play, RotateCcw, Trash2, Users } from "lucide-react";
 import type { Video } from "../../types";
 import StatusBadge from "./StatusBadge";
-import { deleteVideo, getVideoStatus, retryVideo } from "../../api/videos";
+import { deleteVideo, getVideoStatus, retryFailedChunkGroup, retryVideo } from "../../api/videos";
 import { useToast } from "./Toast";
 
 interface VideoCardProps {
@@ -32,6 +32,8 @@ export default function VideoCard({ video }: VideoCardProps) {
   const progress = statusData?.progress ?? 0;
   const processingError = statusData?.error ?? video.processing_error;
   const isBusy = isProcessing || video.processing_status === "queued";
+  const groupStatusLabel = statusData?.chunk_group_status_label ?? video.chunk_group_status_label;
+  const isChunked = Boolean(video.chunk_group_id && (video.chunk_count ?? 1) > 1);
 
   const refreshVideos = () => {
     queryClient.invalidateQueries({ queryKey: ["videos"] });
@@ -61,6 +63,17 @@ export default function VideoCard({ video }: VideoCardProps) {
     },
   });
 
+  const retryGroupMutation = useMutation({
+    mutationFn: () => retryFailedChunkGroup(video.chunk_group_id ?? ""),
+    onSuccess: (result) => {
+      toast.success(`Queued ${result.chunks_queued} failed chunk${result.chunks_queued === 1 ? "" : "s"}`);
+      refreshVideos();
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : "Could not retry failed chunks");
+    },
+  });
+
   const handleDelete = () => {
     const confirmed = window.confirm(
       `Delete ${video.video_name}? This removes its frames, detections, reviews, and analytics.`,
@@ -73,14 +86,23 @@ export default function VideoCard({ video }: VideoCardProps) {
       <div className="flex items-start justify-between gap-3 mb-3">
         <div className="min-w-0">
           <h3 className="text-sm font-semibold text-text-primary truncate">
-            {video.video_name}
+            {video.logical_video_name || video.video_name}
           </h3>
           <p className="text-[12px] text-text-secondary mt-0.5">
-            {video.session_id || "No session"}
+            {isChunked
+              ? `Chunk ${video.chunk_index ?? "?"} of ${video.chunk_count ?? "?"}`
+              : video.session_id || "No session"}
           </p>
         </div>
         <StatusBadge status={getDisplayStatus(video)} entityType="video" />
       </div>
+
+      {isChunked && groupStatusLabel && (
+        <div className="mb-3 rounded-lg border border-border bg-bg/60 px-3 py-2 text-[12px] text-text-secondary">
+          <span className="font-medium text-text-primary">{groupStatusLabel}</span>
+          <span className="ml-2">{video.video_name}</span>
+        </div>
+      )}
 
       <div className="flex items-center gap-4 text-[12px] text-text-secondary mb-4">
         {video.camera_type && (
@@ -140,6 +162,21 @@ export default function VideoCard({ video }: VideoCardProps) {
               aria-label={`Retry ${video.video_name}`}
             >
               {retryMutation.isPending ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <RotateCcw size={14} />
+              )}
+            </button>
+          )}
+          {isChunked && (video.chunk_group_failed ?? 0) > 0 && (video.chunk_index ?? 1) === 1 && (
+            <button
+              onClick={() => retryGroupMutation.mutate()}
+              disabled={retryGroupMutation.isPending || deleteMutation.isPending || isBusy}
+              className="p-1.5 rounded-lg border border-border text-text-secondary hover:text-accent hover:bg-bg transition-colors disabled:opacity-40"
+              title="Retry failed chunks"
+              aria-label={`Retry failed chunks for ${video.logical_video_name || video.video_name}`}
+            >
+              {retryGroupMutation.isPending ? (
                 <Loader2 size={14} className="animate-spin" />
               ) : (
                 <RotateCcw size={14} />

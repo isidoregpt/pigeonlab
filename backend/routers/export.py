@@ -101,17 +101,29 @@ def _report_data(conn, filters: dict) -> dict:
 
     video_summary = _row(
         conn,
-        f"""SELECT
-                COUNT(*) AS total_videos,
-                SUM(CASE WHEN processing_status = 'completed' THEN 1 ELSE 0 END) AS completed_videos,
-                SUM(CASE WHEN processing_status = 'failed' THEN 1 ELSE 0 END) AS failed_videos,
-                SUM(CASE WHEN review_status = 'approved' THEN 1 ELSE 0 END) AS approved_videos,
-                SUM(COALESCE(total_frames, 0)) AS total_frames,
-                ROUND(AVG(fps), 2) AS mean_fps,
-                MIN(processed_at) AS first_processed_at,
-                MAX(processed_at) AS last_processed_at
-            FROM videos v
-            {period_where}""",
+        f"""WITH logical_videos AS (
+                SELECT COALESCE(v.chunk_group_id, 'video-' || v.video_id) AS logical_key,
+                       COUNT(*) AS chunks,
+                       SUM(CASE WHEN processing_status = 'completed' THEN 1 ELSE 0 END) AS completed_chunks,
+                       SUM(CASE WHEN processing_status = 'failed' THEN 1 ELSE 0 END) AS failed_chunks,
+                       SUM(CASE WHEN review_status = 'approved' THEN 1 ELSE 0 END) AS approved_chunks,
+                       SUM(COALESCE(total_frames, 0)) AS total_frames,
+                       AVG(fps) AS mean_fps,
+                       MIN(processed_at) AS first_processed_at,
+                       MAX(processed_at) AS last_processed_at
+                FROM videos v
+                {period_where}
+                GROUP BY logical_key
+            )
+            SELECT COUNT(*) AS total_videos,
+                   SUM(CASE WHEN completed_chunks = chunks THEN 1 ELSE 0 END) AS completed_videos,
+                   SUM(CASE WHEN failed_chunks = chunks THEN 1 ELSE 0 END) AS failed_videos,
+                   SUM(CASE WHEN approved_chunks = chunks THEN 1 ELSE 0 END) AS approved_videos,
+                   SUM(total_frames) AS total_frames,
+                   ROUND(AVG(mean_fps), 2) AS mean_fps,
+                   MIN(first_processed_at) AS first_processed_at,
+                   MAX(last_processed_at) AS last_processed_at
+            FROM logical_videos""",
         period_params,
     )
 
@@ -129,11 +141,46 @@ def _report_data(conn, filters: dict) -> dict:
 
     videos = _rows(
         conn,
-        f"""SELECT video_id, video_name, session_id, camera_type, total_frames, fps,
-                   processing_status, review_status, model_version, processed_at
-            FROM videos v
-            {period_where}
-            ORDER BY processed_at DESC, video_id DESC
+        f"""WITH logical_videos AS (
+                SELECT COALESCE(v.chunk_group_id, 'video-' || v.video_id) AS logical_key,
+                       COALESCE(MAX(v.logical_video_name), MAX(v.video_name)) AS logical_video_name,
+                       MIN(v.video_id) AS first_video_id,
+                       MAX(v.session_id) AS session_id,
+                       MAX(v.camera_type) AS camera_type,
+                       COUNT(*) AS chunks,
+                       SUM(CASE WHEN processing_status = 'completed' THEN 1 ELSE 0 END) AS completed_chunks,
+                       SUM(CASE WHEN processing_status = 'failed' THEN 1 ELSE 0 END) AS failed_chunks,
+                       SUM(CASE WHEN processing_status = 'processing' THEN 1 ELSE 0 END) AS processing_chunks,
+                       SUM(COALESCE(total_frames, 0)) AS total_frames,
+                       ROUND(AVG(fps), 2) AS fps,
+                       MAX(model_version) AS model_version,
+                       MAX(processed_at) AS processed_at,
+                       GROUP_CONCAT(v.video_name, ', ') AS chunk_files
+                FROM videos v
+                {period_where}
+                GROUP BY logical_key
+            )
+            SELECT first_video_id,
+                   logical_video_name,
+                   session_id,
+                   camera_type,
+                   chunks,
+                   completed_chunks,
+                   failed_chunks,
+                   total_frames,
+                   fps,
+                   CASE
+                     WHEN completed_chunks = chunks THEN 'completed'
+                     WHEN failed_chunks = chunks THEN 'failed'
+                     WHEN failed_chunks > 0 OR completed_chunks > 0 THEN 'partial'
+                     WHEN processing_chunks > 0 THEN 'processing'
+                     ELSE 'queued'
+                   END AS processing_status,
+                   model_version,
+                   processed_at,
+                   chunk_files
+            FROM logical_videos
+            ORDER BY processed_at DESC, first_video_id DESC
             LIMIT 50""",
         period_params,
     )
@@ -296,7 +343,7 @@ def _render_report_html(export_id: str, data: dict) -> str:
     .empty { color: #6b7280; font-style: italic; }
     """
     sections = [
-        ("Videos", [("video_id", "ID"), ("video_name", "Name"), ("session_id", "Session"), ("camera_type", "Camera"), ("total_frames", "Frames"), ("fps", "FPS"), ("processing_status", "Processing"), ("review_status", "Review"), ("model_version", "Model"), ("processed_at", "Processed")], data["videos"]),
+        ("Logical Videos", [("first_video_id", "First chunk ID"), ("logical_video_name", "Video"), ("chunks", "Chunks"), ("completed_chunks", "Completed"), ("failed_chunks", "Failed"), ("session_id", "Session"), ("camera_type", "Camera"), ("total_frames", "Frames"), ("fps", "FPS"), ("processing_status", "Processing"), ("model_version", "Model"), ("processed_at", "Processed"), ("chunk_files", "Chunk files")], data["videos"]),
         ("Identity Review Summary", [("review_status", "Review status"), ("match_method", "Match method"), ("assignments", "Assignments")], data["identity_summary"]),
         ("Per-Pigeon Tracking Summary", [("pigeon_id", "Pigeon"), ("frame_observations", "Frame observations"), ("videos", "Videos"), ("mean_confidence", "Mean confidence"), ("mean_velocity_mm_s", "Mean velocity (mm/s)")], data["pigeons"]),
         ("Zone Occupancy", [("zone", "Zone"), ("frame_observations", "Frame observations"), ("estimated_seconds", "Estimated seconds"), ("pigeons", "Pigeons")], data["zones"]),
@@ -365,7 +412,7 @@ def _render_report_md(export_id: str, data: dict) -> str:
         "",
     ]
     sections = [
-        ("Videos", [("video_id", "ID"), ("video_name", "Name"), ("session_id", "Session"), ("camera_type", "Camera"), ("total_frames", "Frames"), ("fps", "FPS"), ("processing_status", "Processing"), ("review_status", "Review"), ("model_version", "Model"), ("processed_at", "Processed")], data["videos"]),
+        ("Logical Videos", [("first_video_id", "First chunk ID"), ("logical_video_name", "Video"), ("chunks", "Chunks"), ("completed_chunks", "Completed"), ("failed_chunks", "Failed"), ("session_id", "Session"), ("camera_type", "Camera"), ("total_frames", "Frames"), ("fps", "FPS"), ("processing_status", "Processing"), ("model_version", "Model"), ("processed_at", "Processed"), ("chunk_files", "Chunk files")], data["videos"]),
         ("Identity Review Summary", [("review_status", "Review status"), ("match_method", "Match method"), ("assignments", "Assignments")], data["identity_summary"]),
         ("Per-Pigeon Tracking Summary", [("pigeon_id", "Pigeon"), ("frame_observations", "Frame observations"), ("videos", "Videos"), ("mean_confidence", "Mean confidence"), ("mean_velocity_mm_s", "Mean velocity (mm/s)")], data["pigeons"]),
         ("Zone Occupancy", [("zone", "Zone"), ("frame_observations", "Frame observations"), ("estimated_seconds", "Estimated seconds"), ("pigeons", "Pigeons")], data["zones"]),

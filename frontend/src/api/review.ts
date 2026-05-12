@@ -11,6 +11,38 @@ export function getUnconfirmedIdentities(videoId: number) {
   return get<VideoAssignment[]>(`/review/identities?video_id=${videoId}`);
 }
 
+export interface ChunkCarryoverSuggestion {
+  assignment_id: number;
+  video_obj_id: number;
+  current_pigeon_id: string;
+  suggested_pigeon_id: string;
+  previous_assignment_id: number;
+  previous_video_id: number;
+  match_basis: "same_track_id" | "sorted_track_order";
+}
+
+export interface ChunkCarryoverResponse {
+  eligible: boolean;
+  reason: string;
+  current_video: {
+    video_id: number;
+    video_name: string;
+    logical_video_name?: string | null;
+    chunk_index?: number | null;
+    chunk_count?: number | null;
+  };
+  previous_video: {
+    video_id: number;
+    video_name: string;
+    chunk_index?: number | null;
+  } | null;
+  suggestions: ChunkCarryoverSuggestion[];
+}
+
+export function getChunkCarryoverSuggestions(videoId: number) {
+  return get<ChunkCarryoverResponse>(`/review/identities/chunk-carryover?video_id=${videoId}`);
+}
+
 interface IdentityReviewPayload {
   assignment_id: number;
   action: "confirm" | "reject" | "reassign";
@@ -32,6 +64,16 @@ export function batchConfirmIdentities(
     assignments,
     ...(reviewer ? { reviewer } : {}),
   });
+}
+
+export function applyChunkCarryoverIdentities(videoId: number, reviewer?: string) {
+  return post<{ video_id: number; applied: number; suggestions: ChunkCarryoverSuggestion[] }>(
+    "/review/identities/same-as-previous-chunk",
+    {
+      video_id: videoId,
+      ...(reviewer ? { reviewer } : {}),
+    },
+  );
 }
 
 // --- QC Flags ---

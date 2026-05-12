@@ -44,6 +44,12 @@ def init_db():
             video_id INTEGER PRIMARY KEY AUTOINCREMENT,
             video_name TEXT NOT NULL,
             source_path TEXT,
+            logical_video_name TEXT,
+            original_source_path TEXT,
+            chunk_group_id TEXT,
+            chunk_index INTEGER DEFAULT 1,
+            chunk_count INTEGER DEFAULT 1,
+            chunk_seconds INTEGER,
             session_id TEXT,
             camera_type TEXT,
             total_frames INTEGER,
@@ -279,6 +285,7 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_videos_review_status ON videos(review_status);
         CREATE INDEX IF NOT EXISTS idx_videos_processing_status ON videos(processing_status);
         CREATE INDEX IF NOT EXISTS idx_videos_processed_at ON videos(processed_at);
+        CREATE INDEX IF NOT EXISTS idx_videos_chunk_group ON videos(chunk_group_id);
 
         -- Indexes: video_assignments
         CREATE INDEX IF NOT EXISTS idx_va_video ON video_assignments(video_id);
@@ -354,11 +361,22 @@ def init_db():
         "ALTER TABLE video_assignments ADD COLUMN created_at TEXT",
         "ALTER TABLE videos ADD COLUMN processing_error TEXT",
         "ALTER TABLE videos ADD COLUMN source_path TEXT",
+        "ALTER TABLE videos ADD COLUMN logical_video_name TEXT",
+        "ALTER TABLE videos ADD COLUMN original_source_path TEXT",
+        "ALTER TABLE videos ADD COLUMN chunk_group_id TEXT",
+        "ALTER TABLE videos ADD COLUMN chunk_index INTEGER DEFAULT 1",
+        "ALTER TABLE videos ADD COLUMN chunk_count INTEGER DEFAULT 1",
+        "ALTER TABLE videos ADD COLUMN chunk_seconds INTEGER",
     ]:
         try:
             cur.execute(stmt)
         except Exception:
             pass  # column already exists
+
+    try:
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_videos_chunk_group ON videos(chunk_group_id)")
+    except Exception:
+        pass
 
     default_settings = {
         "gemma_review_mode": os.getenv("PIGEONLAB_GEMMA_REVIEW_MODE", "off"),
