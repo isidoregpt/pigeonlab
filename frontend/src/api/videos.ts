@@ -1,4 +1,4 @@
-import { get, post, postForm, put } from "./client";
+import { del, get, post, postForm, put } from "./client";
 import type { Video } from "../types";
 
 interface VideosResponse {
@@ -116,6 +116,19 @@ export function importVideoFolder(payload: ImportFolderPayload) {
 
 export function getVideoStatus(id: number) {
   return get<{ status: string; progress: number; error?: string | null }>(`/videos/${id}/status`);
+}
+
+export function retryVideo(id: number) {
+  return post<{ job_id: string; video_id: number; status: string }>(
+    `/videos/${id}/retry`,
+    {},
+  );
+}
+
+export function deleteVideo(id: number) {
+  return del<{ video_id: number; deleted: boolean; rows_deleted: Record<string, number> }>(
+    `/videos/${id}`,
+  );
 }
 
 export function updateVideoReview(id: number, payload: { review_status: string; reviewer: string }) {

@@ -37,11 +37,11 @@ def default_archive_dir() -> Path:
 
 
 def default_chunk_seconds() -> int:
-    raw = os.getenv("PIGEONLAB_VIDEO_CHUNK_SECONDS", "300")
+    raw = os.getenv("PIGEONLAB_VIDEO_CHUNK_SECONDS", "60")
     try:
         return max(30, min(3600, int(raw)))
     except ValueError:
-        return 300
+        return 60
 
 
 def default_ffmpeg_threads() -> int:

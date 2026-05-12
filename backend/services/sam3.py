@@ -534,8 +534,13 @@ class SAM3Wrapper:
             raise RuntimeError("Model not loaded. Call load() first.")
 
         if self._using_native:
+            offload_video_to_cpu = _env_bool("PIGEONLAB_SAM3_OFFLOAD_VIDEO_TO_CPU", True)
             response = self._video_predictor.handle_request(
-                request={"type": "start_session", "resource_path": video_path},
+                request={
+                    "type": "start_session",
+                    "resource_path": video_path,
+                    "offload_video_to_cpu": offload_video_to_cpu,
+                },
             )
             return str(response["session_id"])
 
@@ -740,7 +745,12 @@ class SAM3Wrapper:
         if value is None:
             return None
         if TORCH_AVAILABLE and isinstance(value, torch.Tensor):
-            return value.detach().cpu().numpy()
+            tensor = value.detach()
+            # NumPy cannot represent bfloat16, and downstream review/overlay code
+            # only needs CPU arrays. Promote half-precision outputs before export.
+            if tensor.dtype in (torch.bfloat16, torch.float16):
+                tensor = tensor.float()
+            return tensor.cpu().numpy()
         if isinstance(value, np.ndarray):
             return value
         if isinstance(value, (list, tuple)) and len(value) == 0:

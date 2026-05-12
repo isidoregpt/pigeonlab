@@ -1,9 +1,10 @@
 import { useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { Play, Camera, Film, Users } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AlertCircle, Camera, Film, Loader2, Play, RotateCcw, Trash2, Users } from "lucide-react";
 import type { Video } from "../../types";
 import StatusBadge from "./StatusBadge";
-import { getVideoStatus } from "../../api/videos";
+import { deleteVideo, getVideoStatus, retryVideo } from "../../api/videos";
+import { useToast } from "./Toast";
 
 interface VideoCardProps {
   video: Video;
@@ -17,6 +18,8 @@ function getDisplayStatus(video: Video) {
 
 export default function VideoCard({ video }: VideoCardProps) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const toast = useToast();
   const isProcessing = video.processing_status === "processing";
 
   const { data: statusData } = useQuery({
@@ -28,6 +31,42 @@ export default function VideoCard({ video }: VideoCardProps) {
 
   const progress = statusData?.progress ?? 0;
   const processingError = statusData?.error ?? video.processing_error;
+  const isBusy = isProcessing || video.processing_status === "queued";
+
+  const refreshVideos = () => {
+    queryClient.invalidateQueries({ queryKey: ["videos"] });
+    queryClient.invalidateQueries({ queryKey: ["video-status", video.video_id] });
+    queryClient.invalidateQueries({ queryKey: ["stats-today"] });
+  };
+
+  const retryMutation = useMutation({
+    mutationFn: () => retryVideo(video.video_id),
+    onSuccess: () => {
+      toast.success("Video queued for processing");
+      refreshVideos();
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : "Could not retry video");
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: () => deleteVideo(video.video_id),
+    onSuccess: () => {
+      toast.success("Video deleted");
+      refreshVideos();
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : "Could not delete video");
+    },
+  });
+
+  const handleDelete = () => {
+    const confirmed = window.confirm(
+      `Delete ${video.video_name}? This removes its frames, detections, reviews, and analytics.`,
+    );
+    if (confirmed) deleteMutation.mutate();
+  };
 
   return (
     <div className="bg-surface border border-border rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden">
@@ -62,38 +101,78 @@ export default function VideoCard({ video }: VideoCardProps) {
         )}
       </div>
 
-      <div className="flex items-center gap-2">
-        <button
-          onClick={() => navigate(`/videos/${video.video_id}`)}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-accent text-white text-[12px] font-medium rounded-lg hover:bg-accent/90 transition-colors"
-        >
-          <Play size={13} fill="currentColor" />
-          Watch
-        </button>
-        {video.processing_status === "completed" && video.review_status === "raw" && (
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
-            onClick={() => navigate(`/review?type=identity&video_id=${video.video_id}`)}
-            className="px-3 py-1.5 border border-border text-[12px] font-medium text-text-secondary rounded-lg hover:bg-bg transition-colors"
+            onClick={() => navigate(`/videos/${video.video_id}`)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-accent text-white text-[12px] font-medium rounded-lg hover:bg-accent/90 transition-colors"
           >
-            Review
+            <Play size={13} fill="currentColor" />
+            Watch
           </button>
-        )}
-        {video.processing_status === "queued" && (
-          <span className="px-3 py-1.5 text-[12px] text-text-secondary/60">
-            Waiting in queue...
-          </span>
-        )}
-        {isProcessing && (
-          <span className="px-3 py-1.5 text-[12px] text-text-secondary/60">
-            Processing... {Math.round(progress)}%
-          </span>
-        )}
-        {video.processing_status === "failed" && processingError && (
-          <span className="px-3 py-1.5 text-[12px] text-error truncate" title={processingError}>
-            {processingError}
-          </span>
-        )}
+          {video.processing_status === "completed" && video.review_status === "raw" && (
+            <button
+              onClick={() => navigate(`/review?type=identity&video_id=${video.video_id}`)}
+              className="px-3 py-1.5 border border-border text-[12px] font-medium text-text-secondary rounded-lg hover:bg-bg transition-colors"
+            >
+              Review
+            </button>
+          )}
+          {video.processing_status === "queued" && (
+            <span className="px-3 py-1.5 text-[12px] text-text-secondary/60">
+              Waiting in queue...
+            </span>
+          )}
+          {isProcessing && (
+            <span className="px-3 py-1.5 text-[12px] text-text-secondary/60">
+              Processing... {Math.round(progress)}%
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-1 shrink-0">
+          {video.processing_status === "failed" && (
+            <button
+              onClick={() => retryMutation.mutate()}
+              disabled={retryMutation.isPending || deleteMutation.isPending}
+              className="p-1.5 rounded-lg border border-border text-text-secondary hover:text-accent hover:bg-bg transition-colors disabled:opacity-40"
+              title="Retry processing"
+              aria-label={`Retry ${video.video_name}`}
+            >
+              {retryMutation.isPending ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <RotateCcw size={14} />
+              )}
+            </button>
+          )}
+          <button
+            onClick={handleDelete}
+            disabled={deleteMutation.isPending || retryMutation.isPending || isBusy}
+            className="p-1.5 rounded-lg border border-border text-text-secondary hover:text-error hover:bg-error/5 transition-colors disabled:opacity-40"
+            title={isBusy ? "Stop processing before deleting" : "Delete video"}
+            aria-label={`Delete ${video.video_name}`}
+          >
+            {deleteMutation.isPending ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <Trash2 size={14} />
+            )}
+          </button>
+        </div>
       </div>
+
+      {video.processing_status === "failed" && processingError && (
+        <details className="mt-3 rounded-lg border border-error/20 bg-error/5 px-3 py-2">
+          <summary className="flex cursor-pointer items-center gap-1.5 text-[12px] font-medium text-error">
+            <AlertCircle size={13} />
+            Show error details
+          </summary>
+          <p className="mt-2 whitespace-pre-wrap break-words text-[12px] leading-relaxed text-error/90">
+            {processingError}
+          </p>
+        </details>
+      )}
 
       {/* Progress bar at bottom of card */}
       {isProcessing && (

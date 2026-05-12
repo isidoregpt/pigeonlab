@@ -43,6 +43,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS videos (
             video_id INTEGER PRIMARY KEY AUTOINCREMENT,
             video_name TEXT NOT NULL,
+            source_path TEXT,
             session_id TEXT,
             camera_type TEXT,
             total_frames INTEGER,
@@ -352,6 +353,7 @@ def init_db():
         "ALTER TABLE qc_flags ADD COLUMN created_at TEXT",
         "ALTER TABLE video_assignments ADD COLUMN created_at TEXT",
         "ALTER TABLE videos ADD COLUMN processing_error TEXT",
+        "ALTER TABLE videos ADD COLUMN source_path TEXT",
     ]:
         try:
             cur.execute(stmt)

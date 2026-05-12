@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type LoadingImage = {
   src: string;
@@ -6,6 +6,8 @@ type LoadingImage = {
 };
 
 type LoadingManifest = {
+  startupId?: string;
+  generatedAt?: string;
   durationSecondsPerImage?: number;
   maxDurationSeconds?: number;
   images?: Array<string | LoadingImage>;
@@ -14,6 +16,7 @@ type LoadingManifest = {
 const MANIFEST_URL = "/loading/manifest.json";
 const MIN_DURATION_MS = 2600;
 const FADE_OUT_MS = 900;
+const MANIFEST_POLL_MS = 5_000;
 const DEFAULT_IMAGES: LoadingImage[] = [
   { src: "/loading/HAL.PNG", caption: "HAL" },
   { src: "/loading/WALLE.PNG", caption: "WALLE" },
@@ -47,32 +50,55 @@ export default function StartupLoadingScreen() {
   const [ready, setReady] = useState(true);
   const [dismissed, setDismissed] = useState(false);
   const [fading, setFading] = useState(false);
+  const [cycleKey, setCycleKey] = useState(0);
+  const lastStartupIdRef = useRef<string | null>(null);
+
+  const beginCycle = useCallback((nextImages: LoadingImage[], nextDurationMs: number) => {
+    setImages(rotateImages(nextImages));
+    setDurationMs(nextDurationMs);
+    setElapsedMs(0);
+    setFading(false);
+    setDismissed(false);
+    setReady(true);
+    setCycleKey((key) => key + 1);
+  }, []);
+
+  const loadManifest = useCallback(
+    async (mode: "initial" | "poll") => {
+      let manifest: LoadingManifest | null = null;
+      try {
+        const response = await fetch(`${MANIFEST_URL}?t=${Date.now()}`, { cache: "no-store" });
+        manifest = response.ok ? ((await response.json()) as LoadingManifest) : null;
+      } catch {
+        manifest = null;
+      }
+
+      const loadedImages = manifest ? normalizeImages(manifest) : [];
+      const nextImages = loadedImages.length > 0 ? loadedImages : DEFAULT_IMAGES;
+      const nextDurationMs = durationFor(nextImages, manifest);
+      const manifestId = manifest?.startupId ?? manifest?.generatedAt ?? null;
+
+      if (mode === "initial") {
+        lastStartupIdRef.current = manifestId;
+        beginCycle(nextImages, nextDurationMs);
+        return;
+      }
+
+      if (manifestId && lastStartupIdRef.current && manifestId !== lastStartupIdRef.current) {
+        lastStartupIdRef.current = manifestId;
+        beginCycle(nextImages, nextDurationMs);
+      } else if (manifestId && !lastStartupIdRef.current) {
+        lastStartupIdRef.current = manifestId;
+      }
+    },
+    [beginCycle],
+  );
 
   useEffect(() => {
-    let cancelled = false;
-
-    fetch(`${MANIFEST_URL}?t=${Date.now()}`, { cache: "no-store" })
-      .then((response) => (response.ok ? response.json() : null))
-      .then((manifest: LoadingManifest | null) => {
-        if (cancelled) return;
-        const loadedImages = manifest ? normalizeImages(manifest) : [];
-        const nextImages = loadedImages.length > 0 ? loadedImages : DEFAULT_IMAGES;
-
-        setImages(rotateImages(nextImages));
-        setDurationMs(durationFor(nextImages, manifest));
-        setReady(true);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setImages(rotateImages(DEFAULT_IMAGES));
-        setDurationMs(durationFor(DEFAULT_IMAGES));
-        setReady(true);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    void loadManifest("initial");
+    const interval = window.setInterval(() => void loadManifest("poll"), MANIFEST_POLL_MS);
+    return () => window.clearInterval(interval);
+  }, [loadManifest]);
 
   useEffect(() => {
     if (!ready || dismissed) return;
@@ -95,7 +121,7 @@ export default function StartupLoadingScreen() {
 
     animationFrame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(animationFrame);
-  }, [dismissed, durationMs, ready]);
+  }, [cycleKey, dismissed, durationMs, ready]);
 
   const activeIndex = useMemo(() => {
     if (images.length <= 1) return 0;

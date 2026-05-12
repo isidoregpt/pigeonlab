@@ -11,6 +11,7 @@ export type QCSeverity = "low" | "medium" | "high" | "critical";
 export interface Video {
   video_id: number;
   video_name: string;
+  source_path?: string | null;
   session_id: string | null;
   camera_type: string | null;
   total_frames: number | null;

@@ -111,7 +111,13 @@ The installer writes defaults tuned for a 64-core Threadripper, 128GB RAM, RTX
 A6000 48GB, and fast NVMe storage:
 
 - Keep `PIGEONLAB_UVICORN_WORKERS=1` so SAM3/Gemma are not loaded multiple times into VRAM.
-- Use `PIGEONLAB_SAM3_COMPILE=1`, `PIGEONLAB_SAM3_WARM_UP=1`, and `PIGEONLAB_SAM3_MULTIPLEX_COUNT=32`.
+- Use `PIGEONLAB_SAM3_COMPILE=0`, `PIGEONLAB_SAM3_MULTIPLEX_COUNT=16`, and
+  `PIGEONLAB_SAM3_MAX_OBJECTS=8`. The native SAM3.1 checkpoint expects 16-way
+  multiplexing, and torch.compile currently selects Triton kernels that exceed
+  the RTX A6000 shared-memory limit.
+- Keep `PIGEONLAB_SAM3_OFFLOAD_VIDEO_TO_CPU=1` and
+  `PIGEONLAB_SAM3_FALLBACK_PER_FRAME=0` so long-video failures are surfaced
+  clearly instead of silently degrading to non-temporal per-frame detections.
 - Use `PIGEONLAB_TORCH_DTYPE=auto`; the backend chooses CUDA bfloat16 when supported and float16 otherwise.
 - Keep `PIGEONLAB_SAM3_ENABLE_WINDOWS_PATCHES=1` on Windows. It applies narrow SAM3.1 compatibility patches for the native multiplex predictor and SDPA fallback kernels.
 - Use `PIGEONLAB_FFMPEG_THREADS=32` and `PIGEONLAB_FFMPEG_USE_NVENC=1` for FFmpeg fallback re-encoding.
@@ -134,12 +140,15 @@ PigeonLab can watch a simple local workflow: place new source videos in
 `data/videos/output`, and optionally archive the originals under
 `data/videos/archive`.
 
+Direct uploads and path-based video adds also auto-split videos longer than
+`PIGEONLAB_VIDEO_CHUNK_SECONDS` when `PIGEONLAB_VIDEO_AUTO_CHUNK_UPLOADS=1`.
+
 Install FFmpeg, then use the Videos page "Import Folder" action or call the API:
 
 ```bash
 curl -X POST http://localhost:8000/api/videos/import-folder \
   -H "Content-Type: application/json" \
-  -d "{\"chunk_seconds\":300,\"process_now\":true,\"expected_pigeon_count\":4,\"text_prompt\":\"pigeon\",\"limit\":10}"
+  -d "{\"chunk_seconds\":60,\"process_now\":true,\"expected_pigeon_count\":4,\"text_prompt\":\"pigeon\",\"limit\":10}"
 ```
 
 Useful environment overrides:
@@ -148,7 +157,8 @@ Useful environment overrides:
 PIGEONLAB_VIDEO_INPUT_DIR=E:/PigeonLab/input
 PIGEONLAB_VIDEO_OUTPUT_DIR=E:/PigeonLab/output
 PIGEONLAB_VIDEO_ARCHIVE_DIR=E:/PigeonLab/archive
-PIGEONLAB_VIDEO_CHUNK_SECONDS=300
+PIGEONLAB_VIDEO_CHUNK_SECONDS=60
+PIGEONLAB_VIDEO_AUTO_CHUNK_UPLOADS=1
 ```
 
 ### Frontend
