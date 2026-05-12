@@ -20,6 +20,7 @@ from database import init_db, get_db, DB_PATH
 from routers import videos, pigeons, insights, review, training, export, stats, settings
 from routers.stats import recent_activity as _activity_handler
 from scripts.setup_check import collect_runtime_diagnostics
+from services.ffmpeg_ingest import get_ffmpeg_status
 from services.sam3 import get_sam3_status
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -47,6 +48,8 @@ async def lifespan(app: FastAPI):
     for d in DATA_DIRS:
         (PROJECT_ROOT / d).mkdir(parents=True, exist_ok=True)
     init_db()
+    for warning in get_ffmpeg_status().get("warnings", []):
+        logger.warning(warning)
     yield
 
 

@@ -14,6 +14,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 VIDEO_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv"}
 logger = logging.getLogger(__name__)
+UNSTABLE_FFMPEG_LOCATIONS = {"downloads", "desktop", "temp"}
 
 
 def _configured_path(env_name: str, default_relative: str) -> Path:
@@ -107,14 +108,34 @@ def _run(args: list[str]) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _ffmpeg_location_warnings(path_value: str | None) -> list[str]:
+    if not path_value:
+        return []
+    path = Path(path_value)
+    parts = {part.lower() for part in path.parts}
+    unstable = bool(parts & UNSTABLE_FFMPEG_LOCATIONS)
+    if {"appdata", "local", "temp"}.issubset(parts):
+        unstable = True
+    if not unstable:
+        return []
+    return [
+        "FFmpeg detected at "
+        f"{path_value}. This location is unstable - move FFmpeg to a permanent "
+        "location such as C:\\ffmpeg\\bin\\ and update PATH to avoid breakage."
+    ]
+
+
 def get_ffmpeg_status() -> dict:
     ffmpeg_path = shutil.which("ffmpeg")
     ffprobe_path = shutil.which("ffprobe")
     errors: list[str] = []
+    warnings: list[str] = []
     if not ffmpeg_path:
         errors.append("ffmpeg was not found on PATH.")
     if not ffprobe_path:
         errors.append("ffprobe was not found on PATH.")
+    warnings.extend(_ffmpeg_location_warnings(ffmpeg_path))
+    warnings.extend(_ffmpeg_location_warnings(ffprobe_path))
 
     return {
         "available": not errors,
@@ -127,6 +148,7 @@ def get_ffmpeg_status() -> dict:
         "threads": default_ffmpeg_threads(),
         "nvenc_fallback": _env_bool("PIGEONLAB_FFMPEG_USE_NVENC", True),
         "errors": errors,
+        "warnings": warnings,
     }
 
 

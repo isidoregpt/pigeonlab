@@ -11,7 +11,9 @@ A full-stack web application for pigeon behavioral tracking from video. Upload v
 - **Python 3.12** with `pip` for SAM3.1 video processing on Windows
 - **Node.js 18+** with `npm`
 - **NVIDIA CUDA GPU** for SAM3.1 inference
-- **FFmpeg** on PATH for long-video folder ingestion
+- **FFmpeg** on PATH for long-video ingestion. Prefer a permanent install
+  location such as `C:\ffmpeg\bin`; Downloads, Desktop, and Temp locations are
+  easy to clean up accidentally.
 - **Ollama** for optional Gemma reviewer automation
 
 ## Quick Start
@@ -29,6 +31,8 @@ with WinGet when missing, creates `backend/venv`, installs the CUDA PyTorch
 stack, installs SAM3.1 from GitHub, runs `npm install`, pulls the configured
 Gemma model with Ollama, optionally downloads the gated SAM3.1 checkpoint, and
 runs the setup checker. Installer logs are written to `data/logs/install-*.log`.
+The workstation profile assumes a 48GB GPU; for 24GB or smaller GPUs, see
+[docs/memory-model.md](./docs/memory-model.md).
 
 After install, start the app with:
 
@@ -50,8 +54,7 @@ frontend/public/loading
 
 Use PNG, JPG, JPEG, WEBP, or GIF files. The next `start.bat` run refreshes
 `frontend/public/loading/manifest.json` automatically, and the app fades through
-the images before revealing the main workspace. The loader is intentionally
-non-blocking and includes a Skip button.
+one image before revealing the main workspace.
 
 ### Backend
 
@@ -163,6 +166,19 @@ PIGEONLAB_VIDEO_ARCHIVE_DIR=E:/PigeonLab/archive
 PIGEONLAB_VIDEO_CHUNK_SECONDS=60
 PIGEONLAB_VIDEO_AUTO_CHUNK_UPLOADS=1
 ```
+
+### Where Files Live
+
+- Browser uploads are copied to `data/videos/uploads` with a unique prefix.
+- Auto-chunked uploads and path-based adds write chunk files under
+  `data/videos/output/<source-name>_<timestamp>/`.
+- Folder import reads from `data/videos/inbox`, writes chunks to
+  `data/videos/output`, and only moves originals to `data/videos/archive` when
+  archive mode is enabled.
+- Extracted JPG frames for the Watch view live under `data/frames/<video_id>/`.
+- Deleting a video removes database rows and extracted frames. Source uploads
+  and generated chunk files are intentionally left on disk so researchers do not
+  lose original media by clicking Delete in the UI.
 
 ### Research Reports
 
