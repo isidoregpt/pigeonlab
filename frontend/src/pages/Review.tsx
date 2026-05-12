@@ -36,16 +36,73 @@ const QC_TRANSLATIONS: Record<string, string> = {
   id_swap_detected: "Possible identity swap between two pigeons",
   low_confidence_id: "Pigeon identity has low confidence",
   track_gap: "Tracking gap detected — pigeon may have disappeared briefly",
+  track_gap_summary: "Tracking gaps detected",
   overlap_detected: "Two pigeon tracks are overlapping",
   velocity_spike: "Abnormally high velocity detected",
   mask_drift: "Segmentation mask may be drifting off the pigeon",
   frame_drop: "Frames may have been dropped during processing",
   low_segmentation_quality: "Segmentation quality is below threshold",
   duplicate_detection: "Possible duplicate detection of the same pigeon",
+  low_detection_density: "Low detection density in this chunk",
+  no_detections: "No pigeons detected in this chunk",
 };
 
 function translateFlag(flag: QCFlag): string {
   return QC_TRANSLATIONS[flag.rule_name] ?? flag.reason ?? flag.rule_name.replace(/_/g, " ");
+}
+
+interface QCFlagPattern {
+  key: string;
+  label: string;
+  bucket: string;
+  flags: QCFlag[];
+  severity: QCFlag["severity"];
+}
+
+const SEVERITY_RANK: Record<string, number> = {
+  critical: 0,
+  high: 1,
+  medium: 2,
+  low: 3,
+};
+
+function percentBucket(reason: string | null | undefined): string {
+  const match = reason?.match(/\((\d+(?:\.\d+)?)%\)/);
+  if (!match) return "similar";
+  const value = Number(match[1]);
+  if (value >= 75) return "75-100%";
+  if (value >= 50) return "50-75%";
+  if (value >= 25) return "25-50%";
+  return "0-25%";
+}
+
+function qcPatternKey(flag: QCFlag): string {
+  return `${flag.rule_name}:${flag.severity ?? "none"}:${percentBucket(flag.reason)}`;
+}
+
+function groupQCFlags(flags: QCFlag[]): QCFlagPattern[] {
+  const groups = new Map<string, QCFlagPattern>();
+  for (const flag of flags) {
+    const key = qcPatternKey(flag);
+    const existing = groups.get(key);
+    if (existing) {
+      existing.flags.push(flag);
+      continue;
+    }
+    groups.set(key, {
+      key,
+      label: QC_TRANSLATIONS[flag.rule_name] ?? flag.rule_name.replace(/_/g, " "),
+      bucket: percentBucket(flag.reason),
+      flags: [flag],
+      severity: flag.severity,
+    });
+  }
+  return Array.from(groups.values()).sort((a, b) => {
+    const severityA = SEVERITY_RANK[a.severity ?? "low"] ?? 4;
+    const severityB = SEVERITY_RANK[b.severity ?? "low"] ?? 4;
+    if (severityA !== severityB) return severityA - severityB;
+    return b.flags.length - a.flags.length;
+  });
 }
 
 /* ================================================================
@@ -436,14 +493,20 @@ function QCReview({ videoId }: { videoId?: number }) {
   });
 
   const batchResolveMutation = useMutation({
-    mutationFn: (flagIds: number[]) =>
+    mutationFn: ({
+      flagIds,
+      resolvedAction = "accepted",
+    }: {
+      flagIds: number[];
+      resolvedAction?: "accepted" | "ignored";
+    }) =>
       batchResolveQCFlags({
         flag_ids: flagIds,
         action: "resolve",
-        resolved_action: "accepted",
+        resolved_action: resolvedAction,
         reviewer: "lab_user",
       }),
-    onMutate: async (flagIds) => {
+    onMutate: async ({ flagIds }) => {
       await queryClient.cancelQueries({ queryKey: ["qc-flags", videoId] });
       const previous = queryClient.getQueryData<QCFlag[]>(["qc-flags", videoId]);
       const idSet = new Set(flagIds);
@@ -452,12 +515,16 @@ function QCReview({ videoId }: { videoId?: number }) {
       );
       return { previous };
     },
-    onSuccess: () => {
-      toast.success("All low-severity flags resolved");
+    onSuccess: (_data, variables) => {
+      toast.success(
+        variables.resolvedAction === "ignored"
+          ? "Similar QC flags dismissed"
+          : "QC flags resolved",
+      );
       queryClient.invalidateQueries({ queryKey: ["attention-count"] });
       queryClient.invalidateQueries({ queryKey: ["attention-items"] });
     },
-    onError: (_err, _flagIds, context) => {
+    onError: (_err, _variables, context) => {
       if (context?.previous) {
         queryClient.setQueryData(["qc-flags", videoId], context.previous);
       }
@@ -469,6 +536,7 @@ function QCReview({ videoId }: { videoId?: number }) {
   });
 
   const flags = flagsQuery.data ?? [];
+  const flagPatterns = groupQCFlags(flags);
   const lowFlags = flags.filter(
     (f) => f.severity === "low" || f.severity === null,
   );
@@ -506,7 +574,9 @@ function QCReview({ videoId }: { videoId?: number }) {
         {lowFlags.length > 1 && (
           <button
             onClick={() =>
-              batchResolveMutation.mutate(lowFlags.map((f) => f.id))
+              batchResolveMutation.mutate({
+                flagIds: lowFlags.map((f) => f.id),
+              })
             }
             disabled={batchResolveMutation.isPending}
             className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium border border-border rounded-lg hover:bg-bg transition-colors disabled:opacity-50"
@@ -519,18 +589,80 @@ function QCReview({ videoId }: { videoId?: number }) {
         )}
       </div>
 
+      {flagPatterns.length > 0 && (
+        <div className="bg-surface border border-border rounded-xl divide-y divide-border">
+          <div className="px-5 py-4">
+            <p className="text-sm font-semibold text-text-primary">
+              {flags.length} flags grouped into {flagPatterns.length} pattern{flagPatterns.length === 1 ? "" : "s"}
+            </p>
+            <p className="text-[12px] text-text-secondary mt-1">
+              Review the largest patterns first, then dismiss similar items in one action.
+            </p>
+          </div>
+          {flagPatterns.map((pattern) => (
+            <div
+              key={pattern.key}
+              className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-sm font-medium text-text-primary">
+                    {pattern.label}
+                  </p>
+                  {pattern.severity && <StatusBadge status={pattern.severity} />}
+                  <span className="text-[11px] text-text-secondary">
+                    {pattern.flags.length} flag{pattern.flags.length === 1 ? "" : "s"}
+                  </span>
+                  {pattern.bucket !== "similar" && (
+                    <span className="text-[11px] text-text-secondary">
+                      {pattern.bucket}
+                    </span>
+                  )}
+                </div>
+                {pattern.flags[0]?.reason && (
+                  <p className="text-[12px] text-text-secondary mt-1 truncate">
+                    {pattern.flags[0].reason}
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={() =>
+                  batchResolveMutation.mutate({
+                    flagIds: pattern.flags.map((flag) => flag.id),
+                    resolvedAction: "ignored",
+                  })
+                }
+                disabled={batchResolveMutation.isPending}
+                className="px-3 py-1.5 text-[12px] font-medium border border-border rounded-lg hover:bg-bg transition-colors disabled:opacity-50"
+              >
+                Dismiss Similar
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="bg-surface border border-border rounded-xl divide-y divide-border">
         {flags.map((flag) => (
           <QCFlagRow
             key={flag.id}
             flag={flag}
             onAccept={() => resolveMutation.mutate(flag.id)}
+            onDismissSimilar={() =>
+              batchResolveMutation.mutate({
+                flagIds: (flagPatterns.find((pattern) => pattern.key === qcPatternKey(flag))?.flags ?? [flag]).map(
+                  (item) => item.id,
+                ),
+                resolvedAction: "ignored",
+              })
+            }
             onFix={() =>
               navigate(
                 `/videos/${flag.video_id}${flag.frame_idx != null ? `?frame=${flag.frame_idx}` : ""}`,
               )
             }
-            isPending={resolveMutation.isPending}
+            similarCount={flagPatterns.find((pattern) => pattern.key === qcPatternKey(flag))?.flags.length ?? 1}
+            isPending={resolveMutation.isPending || batchResolveMutation.isPending}
           />
         ))}
       </div>
@@ -541,12 +673,16 @@ function QCReview({ videoId }: { videoId?: number }) {
 function QCFlagRow({
   flag,
   onAccept,
+  onDismissSimilar,
   onFix,
+  similarCount,
   isPending,
 }: {
   flag: QCFlag;
   onAccept: () => void;
+  onDismissSimilar: () => void;
   onFix: () => void;
+  similarCount: number;
   isPending: boolean;
 }) {
   return (
@@ -568,6 +704,15 @@ function QCFlagRow({
         </div>
       </div>
       <div className="flex items-center gap-2 shrink-0">
+        {similarCount > 1 && (
+          <button
+            onClick={onDismissSimilar}
+            disabled={isPending}
+            className="px-3 py-1.5 text-[12px] font-medium border border-border rounded-lg hover:bg-bg transition-colors disabled:opacity-50"
+          >
+            Dismiss Similar ({similarCount})
+          </button>
+        )}
         <button
           onClick={onAccept}
           disabled={isPending}

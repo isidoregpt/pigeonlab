@@ -121,6 +121,8 @@ A6000 48GB, and fast NVMe storage:
 - Keep `PIGEONLAB_SAM3_OFFLOAD_VIDEO_TO_CPU=1` and
   `PIGEONLAB_SAM3_FALLBACK_PER_FRAME=0` so long-video failures are surfaced
   clearly instead of silently degrading to non-temporal per-frame detections.
+- Keep `PIGEONLAB_REID_ENABLED=1` to merge short within-chunk track fragments
+  before exports and Identity Review are populated.
 - Use `PIGEONLAB_TORCH_DTYPE=auto`; the backend chooses CUDA bfloat16 when supported and float16 otherwise.
 - Keep `PIGEONLAB_SAM3_ENABLE_WINDOWS_PATCHES=1` on Windows. It applies narrow SAM3.1 compatibility patches for the native multiplex predictor and SDPA fallback kernels.
 - Use `PIGEONLAB_FFMPEG_THREADS=32` and `PIGEONLAB_FFMPEG_USE_NVENC=1` for FFmpeg fallback re-encoding.

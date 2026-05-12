@@ -6,6 +6,7 @@ required — only NumPy.
 """
 
 import logging
+import os
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -23,6 +24,9 @@ class Track:
     last_seen_frame: int = 0
     centroid_history: list[tuple[float, float]] = field(default_factory=list)
     confidence_history: list[float] = field(default_factory=list)
+    frame_history: list[int] = field(default_factory=list)
+    bbox_history: list[list[float]] = field(default_factory=list)
+    appearance_history: list[np.ndarray] = field(default_factory=list)
     active: bool = True
     frames_lost: int = 0
 
@@ -41,6 +45,10 @@ class PigeonTracker:
         self,
         max_lost_frames: int = 30,
         max_match_distance: float = 80.0,
+        reid_enabled: bool | None = None,
+        reid_appearance_threshold: float | None = None,
+        reid_gap_frames: int | None = None,
+        reid_spatial_threshold_px: float | None = None,
     ) -> None:
         """Initialise the tracker.
 
@@ -55,18 +63,42 @@ class PigeonTracker:
         self._max_match_distance = max_match_distance
         self._tracks: list[Track] = []
         self._next_id: int = 0
+        self._aliases: dict[int, int] = {}
+        self.reid_enabled = (
+            self._env_bool("PIGEONLAB_REID_ENABLED", True)
+            if reid_enabled is None else reid_enabled
+        )
+        self._reid_appearance_threshold = (
+            self._env_float("PIGEONLAB_REID_APPEARANCE_THRESHOLD", 0.3)
+            if reid_appearance_threshold is None else reid_appearance_threshold
+        )
+        self._reid_gap_frames = (
+            self._env_int("PIGEONLAB_REID_GAP_FRAMES", max_lost_frames)
+            if reid_gap_frames is None else reid_gap_frames
+        )
+        self._reid_spatial_threshold_px = (
+            self._env_float("PIGEONLAB_REID_SPATIAL_THRESHOLD_PX", 120.0)
+            if reid_spatial_threshold_px is None else reid_spatial_threshold_px
+        )
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
-    def update(self, frame_idx: int, detections: list[dict]) -> list[dict]:
+    def update(
+        self,
+        frame_idx: int,
+        detections: list[dict],
+        frame_bgr: np.ndarray | None = None,
+    ) -> list[dict]:
         """Assign persistent track IDs to a new set of detections.
 
         Args:
             frame_idx: Zero-based frame index.
             detections: List of detection dicts from SAM3Wrapper
                 (keys: ``mask``, ``bbox``, ``confidence``, ``obj_id``).
+            frame_bgr: Optional frame pixels used to collect simple
+                appearance histograms for fragment re-identification.
 
         Returns:
             New list of dicts — same as input but with an added
@@ -82,8 +114,7 @@ class PigeonTracker:
         for track, det in matched_pairs:
             cx, cy = self._compute_centroid(det["bbox"])
             track.last_seen_frame = frame_idx
-            track.centroid_history.append((cx, cy))
-            track.confidence_history.append(det.get("confidence", 1.0))
+            self._record_detection(track, frame_idx, det, (cx, cy), frame_bgr)
             track.frames_lost = 0
 
         # Handle unmatched existing tracks
@@ -103,9 +134,8 @@ class PigeonTracker:
                 obj_id=self._next_id,
                 first_seen_frame=frame_idx,
                 last_seen_frame=frame_idx,
-                centroid_history=[(cx, cy)],
-                confidence_history=[det.get("confidence", 1.0)],
             )
+            self._record_detection(new_track, frame_idx, det, (cx, cy), frame_bgr)
             self._tracks.append(new_track)
             self._next_id += 1
             logger.debug("New track %d created at frame %d", new_track.obj_id, frame_idx)
@@ -124,6 +154,66 @@ class PigeonTracker:
                     break
 
         return results
+
+    def merge_fragmented_tracks(self) -> dict[int, int]:
+        """Merge short-gap track fragments using appearance and position.
+
+        Returns:
+            Mapping of ``source_track_id -> target_track_id`` for fragments
+            that should be treated as the same physical pigeon.
+        """
+        if not self.reid_enabled:
+            return {}
+
+        mapping: dict[int, int] = {}
+        tracks = sorted(self._tracks, key=lambda track: track.first_seen_frame)
+        for current in tracks:
+            if not current.centroid_history:
+                continue
+
+            best: tuple[float, Track] | None = None
+            for previous in tracks:
+                if previous.obj_id == current.obj_id or not previous.centroid_history:
+                    continue
+                if previous.last_seen_frame >= current.first_seen_frame:
+                    continue
+
+                gap = current.first_seen_frame - previous.last_seen_frame
+                if gap > self._reid_gap_frames:
+                    continue
+
+                spatial_distance = self._centroid_distance(
+                    previous.centroid_history[-1],
+                    current.centroid_history[0],
+                )
+                if spatial_distance > self._reid_spatial_threshold_px:
+                    continue
+
+                appearance_distance = self._track_appearance_distance(previous, current)
+                if appearance_distance > self._reid_appearance_threshold:
+                    continue
+
+                score = appearance_distance + (spatial_distance / max(self._reid_spatial_threshold_px, 1.0))
+                if best is None or score < best[0]:
+                    best = (score, previous)
+
+            if best is None:
+                continue
+
+            target = self._canonical_id(best[1].obj_id)
+            source = self._canonical_id(current.obj_id)
+            if source == target:
+                continue
+            mapping[current.obj_id] = target
+            self._aliases[current.obj_id] = target
+
+        if mapping:
+            logger.info(
+                "Re-ID merged %d fragmented track(s): %s",
+                len(mapping),
+                mapping,
+            )
+        return dict(mapping)
 
     def get_active_tracks(self) -> list[Track]:
         """Return all currently active tracks."""
@@ -152,15 +242,17 @@ class PigeonTracker:
     def reset(self) -> None:
         """Clear all tracks and reset the ID counter."""
         self._tracks.clear()
+        self._aliases.clear()
         self._next_id = 0
 
     def average_confidence(self, track_id: int) -> float:
         """Return the mean confidence for a track, or 0.0 if not found."""
+        confidences: list[float] = []
         for track in self._tracks:
-            if track.obj_id == track_id:
-                if not track.confidence_history:
-                    return 0.0
-                return float(np.mean(track.confidence_history))
+            if self._canonical_id(track.obj_id) == track_id:
+                confidences.extend(track.confidence_history)
+        if confidences:
+            return float(np.mean(confidences))
         return 0.0
 
     # ------------------------------------------------------------------
@@ -177,6 +269,104 @@ class PigeonTracker:
             ``(cx, cy)``
         """
         return ((bbox[0] + bbox[2]) / 2.0, (bbox[1] + bbox[3]) / 2.0)
+
+    def _record_detection(
+        self,
+        track: Track,
+        frame_idx: int,
+        det: dict,
+        centroid: tuple[float, float],
+        frame_bgr: np.ndarray | None,
+    ) -> None:
+        track.centroid_history.append(centroid)
+        track.confidence_history.append(det.get("confidence", 1.0))
+        track.frame_history.append(frame_idx)
+        track.bbox_history.append([float(v) for v in det.get("bbox", [0, 0, 0, 0])])
+        embedding = self._appearance_embedding(det, frame_bgr)
+        if embedding is not None:
+            track.appearance_history.append(embedding)
+
+    def _appearance_embedding(
+        self,
+        det: dict,
+        frame_bgr: np.ndarray | None,
+    ) -> np.ndarray | None:
+        if frame_bgr is None:
+            return None
+        bbox = det.get("bbox")
+        if not bbox or len(bbox) != 4:
+            return None
+
+        height, width = frame_bgr.shape[:2]
+        x1 = max(0, min(width - 1, int(round(bbox[0]))))
+        y1 = max(0, min(height - 1, int(round(bbox[1]))))
+        x2 = max(x1 + 1, min(width, int(round(bbox[2]))))
+        y2 = max(y1 + 1, min(height, int(round(bbox[3]))))
+        crop = frame_bgr[y1:y2, x1:x2]
+        if crop.size == 0:
+            return None
+
+        mask = det.get("mask")
+        pixels = crop.reshape(-1, 3)
+        if mask is not None:
+            mask_arr = np.asarray(mask)
+            if mask_arr.shape[:2] == frame_bgr.shape[:2]:
+                mask_crop = mask_arr[y1:y2, x1:x2].astype(bool)
+                masked = crop[mask_crop]
+                if masked.size > 0:
+                    pixels = masked.reshape(-1, 3)
+
+        hist, _edges = np.histogramdd(
+            pixels.astype(np.float32),
+            bins=(4, 4, 4),
+            range=((0, 256), (0, 256), (0, 256)),
+        )
+        embedding = hist.astype(np.float32).reshape(-1)
+        total = float(embedding.sum())
+        if total <= 0.0:
+            return None
+        return embedding / total
+
+    def _track_appearance_distance(self, previous: Track, current: Track) -> float:
+        if not previous.appearance_history or not current.appearance_history:
+            return 1.0
+        prev_embedding = previous.appearance_history[-1]
+        curr_embedding = current.appearance_history[0]
+        coefficient = float(np.sqrt(prev_embedding * curr_embedding).sum())
+        return float(np.sqrt(max(0.0, 1.0 - min(1.0, coefficient))))
+
+    def _canonical_id(self, track_id: int) -> int:
+        seen: set[int] = set()
+        current = track_id
+        while current in self._aliases and current not in seen:
+            seen.add(current)
+            current = self._aliases[current]
+        return current
+
+    @staticmethod
+    def _centroid_distance(a: tuple[float, float], b: tuple[float, float]) -> float:
+        return float(((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.5)
+
+    @staticmethod
+    def _env_bool(name: str, default: bool) -> bool:
+        raw = os.getenv(name)
+        if raw is None:
+            return default
+        return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+    @staticmethod
+    def _env_int(name: str, default: int) -> int:
+        try:
+            return int(os.getenv(name, str(default)))
+        except (TypeError, ValueError):
+            return default
+
+    @staticmethod
+    def _env_float(name: str, default: float) -> float:
+        try:
+            return float(os.getenv(name, str(default)))
+        except (TypeError, ValueError):
+            return default
 
     def _match_detections(
         self,
