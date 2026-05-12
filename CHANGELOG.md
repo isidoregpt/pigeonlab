@@ -10,6 +10,8 @@ All notable changes to PigeonLab are documented here. This project follows the
 - CHANGELOG and contribution guidance requiring future PRs to update it.
 - SAM3 runtime patch diagnostics in `/api/health/full`, including the load-video CPU offload patch state.
 - `completed_no_detections` video status for chunks that finish without any detections.
+- Grouped QC review patterns with dismiss-similar actions.
+- Within-chunk track fragment re-identification using simple appearance and spatial matching.
 
 ### Changed
 
@@ -18,6 +20,7 @@ All notable changes to PigeonLab are documented here. This project follows the
 - Updated startup loading art documentation to match the current no-skip loader.
 - Renamed the Video Detail count label from Pigeons to Tracks and added Confirmed Pigeons after identity review.
 - Windows installs no longer write unsupported `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`; the backend strips that token defensively if an older `.env` still contains it.
+- Aggregated sparse/missing detection QC into chunk-level flags and made motion QC fps-aware.
 
 ## [0.3.0] - 2026-05-12
 

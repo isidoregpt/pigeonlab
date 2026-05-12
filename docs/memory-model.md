@@ -13,6 +13,8 @@ The SAM3.1 multiplex checkpoint uses about 5 GB of VRAM for model weights. Durin
 - `PIGEONLAB_SAM3_OFFLOAD_VIDEO_TO_CPU`: keep `1` for long videos. Turning it off can allocate the entire decoded video on the GPU.
 - `PIGEONLAB_VIDEO_CHUNK_SECONDS`: lower this if propagation still hits VRAM limits.
 - `PIGEONLAB_VIDEO_AUTO_CHUNK_UPLOADS`: keep `1` so uploads and path-based adds are chunked before processing.
+- `PIGEONLAB_REID_ENABLED`: keep `1` to merge short within-chunk track fragments before feature rows are written.
+- `PIGEONLAB_REID_APPEARANCE_THRESHOLD`, `PIGEONLAB_REID_GAP_FRAMES`, and `PIGEONLAB_REID_SPATIAL_THRESHOLD_PX`: tune conservative color/spatial matching when pigeons leave and re-enter the frame.
 
 ## Recommended Profiles
 

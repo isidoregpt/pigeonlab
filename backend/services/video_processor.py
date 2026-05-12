@@ -9,6 +9,7 @@ All database operations use ``aiosqlite`` for async I/O.
 
 import logging
 import os
+from collections import Counter
 from datetime import datetime
 from typing import Callable
 
@@ -172,7 +173,15 @@ class VideoProcessor:
                         for frame_num in range(total_frames):
                             raise_if_cancelled()
                             detections = all_detections.get(frame_num, [])
-                            tracked = tracker.update(frame_num, detections)
+                            frame_for_reid = (
+                                frame_extractor.get_frame(video_id, frame_num)
+                                if tracker.reid_enabled else None
+                            )
+                            tracked = tracker.update(
+                                frame_num,
+                                detections,
+                                frame_bgr=frame_for_reid,
+                            )
                             features = feature_extractor.compute_features(
                                 frame_idx=frame_num,
                                 video_id=video_id,
@@ -188,7 +197,7 @@ class VideoProcessor:
                             )
 
                             frame_flags = qc_engine.check_frame(
-                                frame_num, features, prev_features,
+                                frame_num, features, prev_features, fps=fps,
                             )
                             qc_rows = qc_engine.flags_to_db_rows(frame_flags, video_id)
 
@@ -237,7 +246,11 @@ class VideoProcessor:
                         detections = self._sam3.predict_frame(
                             frame_bgr, text_prompt,
                         )
-                        tracked = tracker.update(frame_num, detections)
+                        tracked = tracker.update(
+                            frame_num,
+                            detections,
+                            frame_bgr=frame_bgr if tracker.reid_enabled else None,
+                        )
 
                         features = feature_extractor.compute_features(
                             frame_idx=frame_num,
@@ -254,7 +267,7 @@ class VideoProcessor:
                         )
 
                         frame_flags = qc_engine.check_frame(
-                            frame_num, features, prev_features,
+                            frame_num, features, prev_features, fps=fps,
                         )
                         qc_rows = qc_engine.flags_to_db_rows(frame_flags, video_id)
 
@@ -269,6 +282,10 @@ class VideoProcessor:
                                 "Video %d: processed frame %d/%d",
                                 video_id, frame_num, total_frames,
                             )
+
+                reid_mapping = tracker.merge_fragmented_tracks()
+                if reid_mapping:
+                    self._apply_track_id_mapping(all_features, all_pairwise, reid_mapping)
 
                 logger.info(
                     "Video %d: detection complete — %d features, %d pairwise rows",
@@ -333,9 +350,19 @@ class VideoProcessor:
                     await conn.commit()
 
                 # 9. Video-level QC + batch insert
-                video_qc = qc_engine.check_video(all_features)
+                video_qc = qc_engine.check_video(
+                    all_features,
+                    total_frames=total_frames,
+                    fps=fps,
+                )
                 video_qc_rows = qc_engine.flags_to_db_rows(video_qc, video_id)
                 all_qc_flags.extend(video_qc_rows)
+                if all_qc_flags:
+                    logger.info(
+                        "Video %d QC summary: %s",
+                        video_id,
+                        dict(Counter(q["rule_name"] for q in all_qc_flags)),
+                    )
 
                 if all_qc_flags:
                     await conn.executemany(
@@ -497,3 +524,47 @@ class VideoProcessor:
         ]:
             await conn.execute(f"DELETE FROM {table} WHERE video_id = ?", (video_id,))
         FrameExtractor(self._frames_dir).cleanup_frames(video_id)
+
+    @staticmethod
+    def _apply_track_id_mapping(
+        features: list[dict],
+        pairwise: list[dict],
+        mapping: dict[int, int],
+    ) -> None:
+        """Rewrite fragmented track labels before rows are persisted."""
+
+        def map_unknown(label: str) -> str:
+            raw = str(label)
+            if not raw.startswith("unknown_"):
+                return raw
+            try:
+                track_id = int(raw.replace("unknown_", "", 1))
+            except ValueError:
+                return raw
+            target = mapping.get(track_id)
+            return f"unknown_{target}" if target is not None else raw
+
+        for feature in features:
+            track_id = feature.get("track_id")
+            if isinstance(track_id, int) and track_id in mapping:
+                feature["track_id"] = mapping[track_id]
+            feature["pigeon_id"] = map_unknown(feature["pigeon_id"])
+
+        deduped_pairwise: list[dict] = []
+        seen: set[tuple[int, str, str]] = set()
+        for row in pairwise:
+            a = map_unknown(row["pigeon_a"])
+            b = map_unknown(row["pigeon_b"])
+            if a == b:
+                continue
+            if a > b:
+                a, b = b, a
+            key = (int(row["frame_idx"]), a, b)
+            if key in seen:
+                continue
+            seen.add(key)
+            row["pigeon_a"] = a
+            row["pigeon_b"] = b
+            deduped_pairwise.append(row)
+
+        pairwise[:] = deduped_pairwise
