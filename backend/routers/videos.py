@@ -25,6 +25,7 @@ from services.video_processor import VideoProcessor
 from utils import get_default_reviewer
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 UPLOADS_DIR = DATA_DIR / "videos" / "uploads"
@@ -73,6 +74,123 @@ class ReviewUpdate(BaseModel):
 
 def _row_to_dict(row) -> dict:
     return dict(row) if row else {}
+
+
+def _chunk_group_status_label(status: str, completed: int, failed: int, total: int) -> str:
+    if status == "completed":
+        return f"Done ({completed}/{total})"
+    if status == "failed":
+        return f"Failed (0/{total})"
+    if status == "partial":
+        return f"Partial ({completed}/{total}, {failed} failed)"
+    if status == "processing":
+        return f"Processing ({completed}/{total})"
+    return f"Queued ({completed}/{total})"
+
+
+def _chunk_group_status_from_counts(row: dict) -> dict:
+    total = int(row.get("chunk_group_total") or 0)
+    completed = int(row.get("chunk_group_completed") or 0)
+    failed = int(row.get("chunk_group_failed") or 0)
+    processing = int(row.get("chunk_group_processing") or 0)
+    queued = int(row.get("chunk_group_queued") or 0)
+    if total <= 0:
+        return {}
+    if completed == total:
+        status = "completed"
+    elif failed == total:
+        status = "failed"
+    elif failed > 0 or completed > 0:
+        status = "partial"
+    elif processing > 0:
+        status = "processing"
+    else:
+        status = "queued"
+    return {
+        "chunk_group_total": total,
+        "chunk_group_completed": completed,
+        "chunk_group_failed": failed,
+        "chunk_group_processing": processing,
+        "chunk_group_queued": queued,
+        "chunk_group_status": status,
+        "chunk_group_status_label": _chunk_group_status_label(
+            status, completed, failed, total,
+        ),
+    }
+
+
+def _chunk_group_statuses(conn, group_ids: list[str]) -> dict[str, dict]:
+    if not group_ids:
+        return {}
+    placeholders = ",".join("?" for _ in group_ids)
+    rows = conn.execute(
+        f"""SELECT chunk_group_id,
+                   COUNT(*) AS chunk_group_total,
+                   SUM(CASE WHEN processing_status = 'completed' THEN 1 ELSE 0 END) AS chunk_group_completed,
+                   SUM(CASE WHEN processing_status = 'failed' THEN 1 ELSE 0 END) AS chunk_group_failed,
+                   SUM(CASE WHEN processing_status = 'processing' THEN 1 ELSE 0 END) AS chunk_group_processing,
+                   SUM(CASE WHEN processing_status = 'queued' THEN 1 ELSE 0 END) AS chunk_group_queued
+            FROM videos
+            WHERE chunk_group_id IN ({placeholders})
+            GROUP BY chunk_group_id""",
+        group_ids,
+    ).fetchall()
+    return {
+        row["chunk_group_id"]: _chunk_group_status_from_counts(dict(row))
+        for row in rows
+    }
+
+
+def _attach_chunk_group_status(conn, videos: list[dict]) -> list[dict]:
+    group_ids = sorted({
+        str(video.get("chunk_group_id"))
+        for video in videos
+        if video.get("chunk_group_id")
+    })
+    statuses = _chunk_group_statuses(conn, group_ids)
+    for video in videos:
+        group_id = video.get("chunk_group_id")
+        if group_id and group_id in statuses:
+            video.update(statuses[group_id])
+    return videos
+
+
+def _video_insert_payload(entry: dict, session_id: str, camera_type: str) -> tuple:
+    chunk_index = int(entry.get("chunk_index") or 1)
+    chunk_count = int(entry.get("chunk_count") or 1)
+    logical_name = (
+        entry.get("logical_video_name")
+        or entry.get("source_video_name")
+        or entry.get("video_name")
+    )
+    original_source_path = (
+        entry.get("original_source_path")
+        or entry.get("source_path")
+        or entry.get("video_path")
+    )
+    return (
+        entry["video_name"],
+        entry["video_path"],
+        logical_name,
+        original_source_path,
+        entry.get("chunk_group_id"),
+        chunk_index,
+        chunk_count,
+        entry.get("chunk_seconds"),
+        session_id,
+        camera_type,
+    )
+
+
+def _insert_video(conn, entry: dict, session_id: str, camera_type: str):
+    return conn.execute(
+        """INSERT INTO videos
+           (video_name, source_path, logical_video_name, original_source_path,
+            chunk_group_id, chunk_index, chunk_count, chunk_seconds,
+            session_id, camera_type, processing_status, processing_error)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', NULL)""",
+        _video_insert_payload(entry, session_id, camera_type),
+    )
 
 
 def _get_video_or_404(conn, video_id: int) -> dict:
@@ -137,11 +255,23 @@ def _auto_chunk_entries(entries: list[dict]) -> list[dict]:
         path = Path(entry["video_path"])
         duration = probe_duration(path)
         if duration is None or duration <= chunk_seconds:
+            entry.setdefault("logical_video_name", entry.get("source_video_name", entry["video_name"]))
+            entry.setdefault("original_source_path", entry.get("source_path", entry["video_path"]))
+            entry.setdefault("chunk_index", 1)
+            entry.setdefault("chunk_count", 1)
+            entry.setdefault("chunk_seconds", None)
             expanded.append(entry)
             continue
 
         split_result = split_video(path, output_dir, chunk_seconds)
         chunks = split_result.get("chunks", [])
+        group_id = uuid.uuid4().hex
+        logger.info(
+            "Auto-chunking %s: %d chunks of %ss each",
+            entry["video_name"],
+            len(chunks),
+            split_result.get("chunk_seconds", chunk_seconds),
+        )
         for idx, chunk_path in enumerate(chunks, start=1):
             chunk = Path(chunk_path)
             expanded.append(
@@ -149,11 +279,14 @@ def _auto_chunk_entries(entries: list[dict]) -> list[dict]:
                     **entry,
                     "video_path": str(chunk.resolve()),
                     "video_name": chunk.name,
+                    "logical_video_name": entry.get("source_video_name", entry["video_name"]),
                     "source_video_name": entry.get("source_video_name", entry["video_name"]),
                     "source_path": str(chunk.resolve()),
                     "original_source_path": entry.get("source_path", entry["video_path"]),
+                    "chunk_group_id": group_id,
                     "chunk_index": idx,
                     "chunk_count": len(chunks),
+                    "chunk_seconds": split_result.get("chunk_seconds", chunk_seconds),
                 }
             )
     return expanded
@@ -240,9 +373,10 @@ async def list_videos(
                 LIMIT ? OFFSET ?""",
             (per_page, offset),
         ).fetchall()
+        videos = _attach_chunk_group_status(conn, [dict(r) for r in rows])
 
     return {
-        "videos": [dict(r) for r in rows],
+        "videos": videos,
         "total": total,
         "page": page,
         "per_page": per_page,
@@ -335,12 +469,7 @@ async def upload_videos(request: Request):
                     entry["video_name"],
                     camera_assignments.get(entry.get("source_video_name", ""), default_camera_type),
                 )
-                cursor = conn.execute(
-                    """INSERT INTO videos
-                       (video_name, source_path, session_id, camera_type, processing_status, processing_error)
-                       VALUES (?, ?, ?, ?, 'queued', NULL)""",
-                    (entry["video_name"], entry["video_path"], session_id, camera_type),
-                )
+                cursor = _insert_video(conn, entry, session_id, camera_type)
                 entry["video_id"] = cursor.lastrowid
                 queued += 1
             conn.commit()
@@ -386,12 +515,30 @@ async def import_video_folder(req: FolderImportRequest):
     chunk_entries: list[dict] = []
     for source in import_result["videos"]:
         session_id = _import_session_id(req.session_prefix, source["source_stem"])
-        for chunk_path in source["chunks"]:
+        chunks = list(source["chunks"])
+        group_id = uuid.uuid4().hex if len(chunks) > 1 else None
+        if len(chunks) > 1:
+            logger.info(
+                "Auto-chunking %s: %d chunks of %ss each",
+                source["source_name"],
+                len(chunks),
+                source["chunk_seconds"],
+            )
+        for idx, chunk_path in enumerate(chunks, start=1):
+            chunk = Path(chunk_path)
             chunk_entries.append(
                 {
                     "video_path": chunk_path,
+                    "video_name": chunk.name,
                     "session_id": session_id,
-                    "source_path": source["source_path"],
+                    "source_video_name": source["source_name"],
+                    "logical_video_name": source["source_name"],
+                    "source_path": chunk_path,
+                    "original_source_path": source["source_path"],
+                    "chunk_group_id": group_id,
+                    "chunk_index": idx,
+                    "chunk_count": len(chunks),
+                    "chunk_seconds": source["chunk_seconds"],
                     "text_prompt": req.text_prompt.strip() or "pigeon",
                     "expected_pigeon_count": req.expected_pigeon_count,
                 }
@@ -420,13 +567,7 @@ async def import_video_folder(req: FolderImportRequest):
             job_id = str(uuid.uuid4())
             new_video_ids: list[int] = []
             for entry in chunk_entries:
-                name = Path(entry["video_path"]).name
-                cursor = conn.execute(
-                    """INSERT INTO videos
-                       (video_name, source_path, session_id, camera_type, processing_status, processing_error)
-                       VALUES (?, ?, ?, ?, 'queued', NULL)""",
-                    (name, entry["video_path"], entry["session_id"], "FFmpeg chunk"),
-                )
+                cursor = _insert_video(conn, entry, entry["session_id"], "FFmpeg chunk")
                 new_video_ids.append(cursor.lastrowid)
                 queued += 1
             conn.commit()
@@ -477,7 +618,7 @@ async def _run_processing_job(
             )
     _processing_job_results[job_id] = {
         "job_id": job_id,
-        "status": "failed" if failed and not completed else "completed",
+        "status": "failed" if failed and not completed else "partial" if failed else "completed",
         "videos_completed": completed,
         "videos_failed": failed,
         "errors": errors,
@@ -537,12 +678,7 @@ async def process_videos(req: ProcessRequest):
         new_video_ids: list[int] = []
 
         for entry in processing_entries:
-            cursor = conn.execute(
-                """INSERT INTO videos
-                   (video_name, source_path, session_id, camera_type, processing_status, processing_error)
-                   VALUES (?, ?, ?, ?, 'queued', NULL)""",
-                (entry["video_name"], entry["video_path"], req.session_id, entry.get("camera_type", "")),
-            )
+            cursor = _insert_video(conn, entry, req.session_id, entry.get("camera_type", ""))
             new_video_ids.append(cursor.lastrowid)
             queued += 1
 
@@ -577,6 +713,65 @@ async def get_job_status(job_id: str):
             return {"job_id": job_id, "status": "failed", "error": str(exc)}
         return {"job_id": job_id, "status": "completed"}
     return {"job_id": job_id, "status": "running"}
+
+
+@router.post("/chunk-groups/{chunk_group_id}/retry-failed")
+async def retry_failed_chunk_group(chunk_group_id: str):
+    _require_sam3_ready()
+    with get_db() as conn:
+        rows = conn.execute(
+            """SELECT * FROM videos
+               WHERE chunk_group_id = ? AND processing_status = 'failed'
+               ORDER BY chunk_index, video_id""",
+            (chunk_group_id,),
+        ).fetchall()
+        if not rows:
+            raise HTTPException(
+                status_code=404,
+                detail="No failed chunks found for this chunk group.",
+            )
+
+        entries: list[dict] = []
+        for row in rows:
+            video = dict(row)
+            source_path = video.get("source_path")
+            if not source_path or not Path(source_path).is_file():
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Source video file is missing for chunk {video['video_id']}: {source_path}",
+                )
+            _cleanup_video_data(conn, video["video_id"], keep_video_row=True)
+            conn.execute(
+                """UPDATE videos
+                   SET processing_status = 'queued',
+                       processing_error = NULL,
+                       total_frames = NULL,
+                       fps = NULL,
+                       processed_at = NULL,
+                       model_version = NULL,
+                       review_status = 'raw'
+                   WHERE video_id = ?""",
+                (video["video_id"],),
+            )
+            entries.append(
+                {
+                    "video_id": video["video_id"],
+                    "video_path": source_path,
+                    "text_prompt": "pigeon",
+                    "expected_pigeon_count": 4,
+                }
+            )
+        conn.commit()
+
+    job_id = str(uuid.uuid4())
+    task = asyncio.create_task(_run_processing_job(job_id, entries))
+    _processing_jobs[job_id] = task
+    return {
+        "job_id": job_id,
+        "chunk_group_id": chunk_group_id,
+        "chunks_queued": len(entries),
+        "status": "queued",
+    }
 
 
 @router.post("/{video_id}/retry")
@@ -646,6 +841,7 @@ async def get_video(video_id: int):
             (video_id,),
         ).fetchone()
         video["pigeon_count"] = row["cnt"] if row else 0
+        _attach_chunk_group_status(conn, [video])
 
     return video
 
@@ -654,6 +850,7 @@ async def get_video(video_id: int):
 async def video_status(video_id: int):
     with get_db() as conn:
         video = _get_video_or_404(conn, video_id)
+        _attach_chunk_group_status(conn, [video])
 
     progress_map = {"queued": 0, "processing": 50, "completed": 100, "failed": 0}
     status = video.get("processing_status", "queued")
@@ -662,6 +859,11 @@ async def video_status(video_id: int):
         "status": status,
         "progress": progress_map.get(status, 0),
         "error": video.get("processing_error"),
+        "chunk_group_status": video.get("chunk_group_status"),
+        "chunk_group_status_label": video.get("chunk_group_status_label"),
+        "chunk_group_total": video.get("chunk_group_total"),
+        "chunk_group_completed": video.get("chunk_group_completed"),
+        "chunk_group_failed": video.get("chunk_group_failed"),
     }
 
 

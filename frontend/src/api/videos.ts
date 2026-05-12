@@ -115,12 +115,28 @@ export function importVideoFolder(payload: ImportFolderPayload) {
 }
 
 export function getVideoStatus(id: number) {
-  return get<{ status: string; progress: number; error?: string | null }>(`/videos/${id}/status`);
+  return get<{
+    status: string;
+    progress: number;
+    error?: string | null;
+    chunk_group_status?: string | null;
+    chunk_group_status_label?: string | null;
+    chunk_group_total?: number | null;
+    chunk_group_completed?: number | null;
+    chunk_group_failed?: number | null;
+  }>(`/videos/${id}/status`);
 }
 
 export function retryVideo(id: number) {
   return post<{ job_id: string; video_id: number; status: string }>(
     `/videos/${id}/retry`,
+    {},
+  );
+}
+
+export function retryFailedChunkGroup(chunkGroupId: string) {
+  return post<{ job_id: string; chunk_group_id: string; chunks_queued: number; status: string }>(
+    `/videos/chunk-groups/${encodeURIComponent(chunkGroupId)}/retry-failed`,
     {},
   );
 }

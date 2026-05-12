@@ -3,7 +3,7 @@
 export type ReviewStatus = "raw" | "reviewed" | "approved" | "rejected";
 export type ProcessingStatus = "queued" | "processing" | "completed" | "failed";
 export type QCFlagStatus = "pending" | "acknowledged" | "resolved";
-export type MatchMethod = "marker" | "appearance" | "spatial" | "manual" | "placeholder";
+export type MatchMethod = "marker" | "appearance" | "spatial" | "manual" | "placeholder" | "manual_chunk_carryover";
 export type QCSeverity = "low" | "medium" | "high" | "critical";
 
 // --- Data interfaces ---
@@ -12,6 +12,19 @@ export interface Video {
   video_id: number;
   video_name: string;
   source_path?: string | null;
+  logical_video_name?: string | null;
+  original_source_path?: string | null;
+  chunk_group_id?: string | null;
+  chunk_index?: number | null;
+  chunk_count?: number | null;
+  chunk_seconds?: number | null;
+  chunk_group_total?: number | null;
+  chunk_group_completed?: number | null;
+  chunk_group_failed?: number | null;
+  chunk_group_processing?: number | null;
+  chunk_group_queued?: number | null;
+  chunk_group_status?: "queued" | "processing" | "completed" | "failed" | "partial" | null;
+  chunk_group_status_label?: string | null;
   session_id: string | null;
   camera_type: string | null;
   total_frames: number | null;

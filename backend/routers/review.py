@@ -150,6 +150,136 @@ def _assignment_for_obj(conn, video_id: int, obj_id: int) -> dict | None:
     return dict(row) if row else None
 
 
+def _chunk_carryover_suggestions(conn, video_id: int) -> dict:
+    video = conn.execute(
+        """SELECT video_id, video_name, logical_video_name, chunk_group_id,
+                  chunk_index, chunk_count
+           FROM videos WHERE video_id = ?""",
+        (video_id,),
+    ).fetchone()
+    if not video:
+        raise HTTPException(status_code=404, detail=f"Video {video_id} not found")
+
+    current_video = dict(video)
+    group_id = current_video.get("chunk_group_id")
+    chunk_index = int(current_video.get("chunk_index") or 1)
+    chunk_count = int(current_video.get("chunk_count") or 1)
+    if not group_id or chunk_count <= 1:
+        return {
+            "eligible": False,
+            "reason": "This video is not part of an auto-chunked group.",
+            "current_video": current_video,
+            "previous_video": None,
+            "suggestions": [],
+        }
+    if chunk_index <= 1:
+        return {
+            "eligible": False,
+            "reason": "The first chunk has no previous chunk to copy from.",
+            "current_video": current_video,
+            "previous_video": None,
+            "suggestions": [],
+        }
+
+    previous = conn.execute(
+        """SELECT video_id, video_name, logical_video_name, chunk_group_id,
+                  chunk_index, chunk_count
+           FROM videos
+           WHERE chunk_group_id = ? AND chunk_index < ?
+           ORDER BY chunk_index DESC, video_id DESC
+           LIMIT 1""",
+        (group_id, chunk_index),
+    ).fetchone()
+    if not previous:
+        return {
+            "eligible": False,
+            "reason": "No earlier chunk was found for this chunk group.",
+            "current_video": current_video,
+            "previous_video": None,
+            "suggestions": [],
+        }
+
+    current_rows = [
+        dict(row) for row in conn.execute(
+            """SELECT * FROM video_assignments
+               WHERE video_id = ? AND review_status = 'raw'
+               ORDER BY video_obj_id, id""",
+            (video_id,),
+        ).fetchall()
+    ]
+    previous_rows = [
+        dict(row) for row in conn.execute(
+            """SELECT * FROM video_assignments
+               WHERE video_id = ? AND review_status IN ('approved', 'reviewed')
+               ORDER BY video_obj_id, id""",
+            (previous["video_id"],),
+        ).fetchall()
+    ]
+    if not current_rows:
+        return {
+            "eligible": False,
+            "reason": "This chunk has no raw identity assignments left.",
+            "current_video": current_video,
+            "previous_video": dict(previous),
+            "suggestions": [],
+        }
+    if not previous_rows:
+        return {
+            "eligible": False,
+            "reason": "Confirm the previous chunk before carrying identities forward.",
+            "current_video": current_video,
+            "previous_video": dict(previous),
+            "suggestions": [],
+        }
+
+    suggestions: list[dict] = []
+    previous_by_obj = {row["video_obj_id"]: row for row in previous_rows}
+    used_previous_ids: set[int] = set()
+    remaining_current: list[dict] = []
+    for current in current_rows:
+        previous_match = previous_by_obj.get(current["video_obj_id"])
+        if previous_match:
+            used_previous_ids.add(previous_match["id"])
+            suggestions.append(
+                {
+                    "assignment_id": current["id"],
+                    "video_obj_id": current["video_obj_id"],
+                    "current_pigeon_id": current["pigeon_id"],
+                    "suggested_pigeon_id": previous_match["pigeon_id"],
+                    "previous_assignment_id": previous_match["id"],
+                    "previous_video_id": previous_match["video_id"],
+                    "match_basis": "same_track_id",
+                }
+            )
+        else:
+            remaining_current.append(current)
+
+    remaining_previous = [
+        row for row in previous_rows if row["id"] not in used_previous_ids
+    ]
+    if remaining_current and len(remaining_current) == len(remaining_previous):
+        for current, previous_match in zip(remaining_current, remaining_previous):
+            suggestions.append(
+                {
+                    "assignment_id": current["id"],
+                    "video_obj_id": current["video_obj_id"],
+                    "current_pigeon_id": current["pigeon_id"],
+                    "suggested_pigeon_id": previous_match["pigeon_id"],
+                    "previous_assignment_id": previous_match["id"],
+                    "previous_video_id": previous_match["video_id"],
+                    "match_basis": "sorted_track_order",
+                }
+            )
+
+    return {
+        "eligible": bool(suggestions),
+        "reason": "" if suggestions else "No safe one-to-one previous chunk mapping was available.",
+        "current_video": current_video,
+        "previous_video": dict(previous),
+        "suggestions": suggestions,
+    }
+
+
 def _replace_track_label_after_frame(
     conn,
     video_id: int,
@@ -329,7 +459,7 @@ async def next_video_for_identity_review():
 async def list_unconfirmed_identities(video_id: int = Query(...)):
     with get_db() as conn:
         rows = conn.execute(
-            """SELECT id, video_obj_id, pigeon_id, confidence, match_method, review_status
+            """SELECT id, video_id, video_obj_id, pigeon_id, confidence, match_method, review_status
                FROM video_assignments
                WHERE video_id = ? AND review_status = 'raw'
                ORDER BY confidence ASC""",
@@ -425,6 +555,80 @@ class BatchIdentityItem(BaseModel):
 class BatchIdentityRequest(BaseModel):
     assignments: list[BatchIdentityItem]
     reviewer: str = Field(default_factory=get_default_reviewer)
+
+
+class ChunkCarryoverRequest(BaseModel):
+    video_id: int
+    reviewer: str = Field(default_factory=get_default_reviewer)
+
+
+@router.get("/identities/chunk-carryover")
+async def get_chunk_carryover_suggestions(video_id: int = Query(...)):
+    """Suggest identity assignments from the previous auto-chunked sibling."""
+    with get_db() as conn:
+        return _chunk_carryover_suggestions(conn, video_id)
+
+
+@router.post("/identities/same-as-previous-chunk")
+async def apply_chunk_carryover_identities(body: ChunkCarryoverRequest):
+    """Confirm current chunk assignments from the previous reviewed chunk."""
+    applied = 0
+    with get_db() as conn:
+        payload = _chunk_carryover_suggestions(conn, body.video_id)
+        suggestions = payload["suggestions"]
+        if not suggestions:
+            raise HTTPException(
+                status_code=400,
+                detail=payload.get("reason") or "No previous chunk suggestions are available.",
+            )
+
+        for suggestion in suggestions:
+            row = conn.execute(
+                "SELECT * FROM video_assignments WHERE id = ?",
+                (suggestion["assignment_id"],),
+            ).fetchone()
+            if not row:
+                continue
+            assignment = dict(row)
+            old_pigeon = assignment["pigeon_id"]
+            new_pigeon = suggestion["suggested_pigeon_id"]
+            conn.execute(
+                """UPDATE video_assignments
+                   SET pigeon_id = ?,
+                       review_status = 'approved',
+                       match_method = 'manual_chunk_carryover',
+                       reviewed_at = datetime('now'),
+                       reviewed_by = ?
+                   WHERE id = ?""",
+                (new_pigeon, body.reviewer, assignment["id"]),
+            )
+            _replace_identity_references(
+                conn,
+                assignment["video_id"],
+                assignment["video_obj_id"],
+                old_pigeon,
+                new_pigeon,
+            )
+            conn.execute(
+                """INSERT INTO identity_reviews
+                   (assignment_id, action, old_pigeon_id, new_pigeon_id, reviewer, reviewed_at, notes)
+                   VALUES (?, 'confirm', ?, ?, ?, datetime('now'), ?)""",
+                (
+                    assignment["id"],
+                    old_pigeon,
+                    new_pigeon,
+                    body.reviewer,
+                    f"Same as previous chunk assignment {suggestion['previous_assignment_id']} ({suggestion['match_basis']}).",
+                ),
+            )
+            applied += 1
+        conn.commit()
+
+    return {
+        "video_id": body.video_id,
+        "applied": applied,
+        "suggestions": suggestions,
+    }
 
 
 @router.post("/identities/batch")
