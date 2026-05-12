@@ -17,7 +17,7 @@ export function getVideos(sort = "date", page = 1, perPage = 20) {
 }
 
 export function getVideo(id: number) {
-  return get<Video & { pigeon_count: number }>(`/videos/${id}`);
+  return get<Video>(`/videos/${id}`);
 }
 
 interface ProcessPayload {
@@ -124,6 +124,7 @@ export function getVideoStatus(id: number) {
     chunk_group_total?: number | null;
     chunk_group_completed?: number | null;
     chunk_group_failed?: number | null;
+    chunk_group_no_detections?: number | null;
     chunk_group_cancelled?: number | null;
   }>(`/videos/${id}/status`);
 }

@@ -215,6 +215,7 @@ def collect_runtime_diagnostics(load_model: bool = False) -> dict:
         "sam3_ready": sam3_status.get("ready", False),
         "sam3_errors": sam3_status.get("errors", []),
         "sam3_warnings": sam3_status.get("warnings", []),
+        "sam3_patches": sam3_status.get("runtime_patches", {}),
     }
 
 

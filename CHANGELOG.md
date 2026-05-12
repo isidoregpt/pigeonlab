@@ -8,12 +8,16 @@ All notable changes to PigeonLab are documented here. This project follows the
 ### Added
 
 - CHANGELOG and contribution guidance requiring future PRs to update it.
+- SAM3 runtime patch diagnostics in `/api/health/full`, including the load-video CPU offload patch state.
+- `completed_no_detections` video status for chunks that finish without any detections.
 
 ### Changed
 
 - Documented stable FFmpeg install locations, uploaded-video storage paths, chunk storage paths, and per-GPU workstation guidance.
 - Added startup warning when FFmpeg is discovered in Downloads, Desktop, Temp, or AppData Local Temp.
 - Updated startup loading art documentation to match the current no-skip loader.
+- Renamed the Video Detail count label from Pigeons to Tracks and added Confirmed Pigeons after identity review.
+- Windows installs no longer write unsupported `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`; the backend strips that token defensively if an older `.env` still contains it.
 
 ## [0.3.0] - 2026-05-12
 

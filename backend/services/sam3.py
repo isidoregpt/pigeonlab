@@ -14,6 +14,7 @@ import logging
 import os
 import sys
 import uuid
+import importlib
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Callable
@@ -72,6 +73,21 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 MODEL_ROOT = PROJECT_ROOT / "data" / "models"
 _SAM3_RUNTIME_PATCHES_APPLIED = False
+_SAM3_RUNTIME_PATCHES: dict[str, bool] = {
+    "init_state_offload_state_to_cpu": False,
+    "windows_sdpa_fallback": False,
+    "load_video_frames_offload_video_to_cpu_default": False,
+}
+
+
+def _mark_patch(name: str, message: str) -> None:
+    _SAM3_RUNTIME_PATCHES[name] = True
+    logger.info(message)
+
+
+def get_sam3_runtime_patches() -> dict[str, bool]:
+    """Return the SAM3 runtime patch state for diagnostics."""
+    return dict(_SAM3_RUNTIME_PATCHES)
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -148,9 +164,42 @@ def _apply_sam3_runtime_patches() -> None:
 
             patched_init_state._pigeonlab_compat_patch = True  # type: ignore[attr-defined]
             Sam3MultiplexTrackingWithInteractivity.init_state = patched_init_state
-            logger.info("Applied SAM3.1 init_state offload_state_to_cpu compatibility patch")
+            _mark_patch(
+                "init_state_offload_state_to_cpu",
+                "Applied SAM3.1 init_state offload_state_to_cpu compatibility patch",
+            )
+        else:
+            _SAM3_RUNTIME_PATCHES["init_state_offload_state_to_cpu"] = True
     except Exception:
         logger.debug("SAM3.1 init_state compatibility patch skipped", exc_info=True)
+
+    try:
+        from sam3.model import io_utils  # type: ignore[import-untyped]
+
+        original_loader = io_utils.load_video_frames_from_video_file_using_cv2
+        if not getattr(original_loader, "_pigeonlab_offload_video_patch", False):
+
+            def patched_loader(*args, **kwargs):
+                kwargs.setdefault("offload_video_to_cpu", True)
+                return original_loader(*args, **kwargs)
+
+            patched_loader._pigeonlab_offload_video_patch = True  # type: ignore[attr-defined]
+            io_utils.load_video_frames_from_video_file_using_cv2 = patched_loader
+            for module_name in ("sam3.model.sam3_base_predictor", "sam3.model.sam3_video_predictor"):
+                try:
+                    module = importlib.import_module(module_name)
+                    if getattr(module, "load_video_frames_from_video_file_using_cv2", None) is original_loader:
+                        setattr(module, "load_video_frames_from_video_file_using_cv2", patched_loader)
+                except Exception:
+                    logger.debug("Could not patch %s.load_video_frames_from_video_file_using_cv2", module_name, exc_info=True)
+            _mark_patch(
+                "load_video_frames_offload_video_to_cpu_default",
+                "Applied SAM3.1 load_video_frames offload_video_to_cpu default patch",
+            )
+        else:
+            _SAM3_RUNTIME_PATCHES["load_video_frames_offload_video_to_cpu_default"] = True
+    except Exception:
+        logger.debug("SAM3.1 load_video_frames offload_video_to_cpu patch skipped", exc_info=True)
 
     if _is_windows():
         try:
@@ -184,7 +233,12 @@ def _apply_sam3_runtime_patches() -> None:
                     except Exception:
                         logger.debug("Could not patch %s.sdpa_kernel", module_name, exc_info=True)
 
-                logger.info("Applied SAM3.1 Windows SDPA fallback compatibility patch")
+                _mark_patch(
+                    "windows_sdpa_fallback",
+                    "Applied SAM3.1 Windows SDPA fallback compatibility patch",
+                )
+            else:
+                _SAM3_RUNTIME_PATCHES["windows_sdpa_fallback"] = True
         except Exception:
             logger.debug("SAM3.1 SDPA compatibility patch skipped", exc_info=True)
 
@@ -298,6 +352,8 @@ def get_sam3_status(load_model: bool = False) -> dict[str, Any]:
             errors.append("CUDA GPU not detected. SAM3.1 video inference requires a CUDA-capable GPU.")
         elif cuda_version and tuple(int(p) for p in cuda_version.split(".")[:2]) < (12, 6):
             warnings.append(f"SAM3.1 officially expects CUDA 12.6+. Found CUDA {cuda_version}.")
+        if SAM3_NATIVE_AVAILABLE and TORCH_AVAILABLE:
+            _apply_sam3_runtime_patches()
     else:
         if not SAM3_NATIVE_AVAILABLE and not SAM3_TRANSFORMERS_AVAILABLE:
             errors.append("Install either facebookresearch/sam3 or Transformers with SAM3 support.")
@@ -351,6 +407,7 @@ def get_sam3_status(load_model: bool = False) -> dict[str, Any]:
         "errors": errors,
         "warnings": warnings,
         "load_error": load_error,
+        "runtime_patches": get_sam3_runtime_patches(),
     }
 
 
