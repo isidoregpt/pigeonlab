@@ -180,6 +180,7 @@ try {
         New-Item -ItemType Directory -Force -Path (Join-Path $Root $path) | Out-Null
     }
     Write-WorkstationEnv
+    Write-Warn "Workstation profile assumes a 48GB GPU. For 24GB or smaller GPUs, see docs/memory-model.md."
 
     Write-Step "Installing workstation prerequisites"
     Ensure-Command -Command "git" -PackageId "Git.Git" -DisplayName "Git" | Out-Null
