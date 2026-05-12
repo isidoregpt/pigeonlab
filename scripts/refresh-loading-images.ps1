@@ -33,6 +33,8 @@ $images = $files |
     }
 
 $manifest = [pscustomobject]@{
+    startupId = Get-Date -Format "yyyyMMdd-HHmmssffff"
+    generatedAt = (Get-Date).ToString("o")
     durationSecondsPerImage = 4.5
     maxDurationSeconds = 24
     images = @($images)

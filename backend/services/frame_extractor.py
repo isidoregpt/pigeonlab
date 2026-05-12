@@ -12,6 +12,7 @@ import cv2
 import numpy as np
 
 logger = logging.getLogger(__name__)
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 class FrameExtractor:
@@ -26,7 +27,10 @@ class FrameExtractor:
         Args:
             frames_dir: Root directory for saved frames. Created if missing.
         """
-        self._frames_dir = Path(frames_dir)
+        frames_path = Path(frames_dir)
+        if not frames_path.is_absolute():
+            frames_path = PROJECT_ROOT / frames_path
+        self._frames_dir = frames_path.resolve()
         self._frames_dir.mkdir(parents=True, exist_ok=True)
         try:
             threads = int(os.getenv("PIGEONLAB_OPENCV_THREADS", "32"))

@@ -42,6 +42,7 @@ export default function VideoDetail() {
   const toast = useToast();
   const [frameNum, setFrameNum] = useState(0);
   const [frameLoading, setFrameLoading] = useState(true);
+  const [frameError, setFrameError] = useState<string | null>(null);
   const [showOverlays, setShowOverlays] = useState(true);
   const [showRejectDialog, setShowRejectDialog] = useState(false);
 
@@ -145,6 +146,7 @@ export default function VideoDetail() {
       const clamped = Math.max(0, Math.min(totalFrames - 1, n));
       if (clamped !== frameNum) {
         setFrameLoading(true);
+        setFrameError(null);
         setFrameNum(clamped);
       }
     },
@@ -222,7 +224,11 @@ export default function VideoDetail() {
           <div className="bg-surface border border-border rounded-xl overflow-hidden">
             <div className="flex items-center justify-end px-3 py-2 border-b border-border">
               <button
-                onClick={() => setShowOverlays((v) => !v)}
+                onClick={() => {
+                  setFrameLoading(true);
+                  setFrameError(null);
+                  setShowOverlays((v) => !v);
+                }}
                 className="flex items-center gap-1.5 text-xs text-text-secondary hover:text-text-primary transition-colors"
               >
                 {showOverlays ? <Eye size={14} /> : <EyeOff size={14} />}
@@ -237,14 +243,27 @@ export default function VideoDetail() {
               )}
               {totalFrames > 0 ? (
                 <img
+                  key={`${frameNum}-${showOverlays}`}
                   src={getFrameUrl(videoId, frameNum, showOverlays)}
                   alt={`Frame ${frameNum}`}
-                  className={`max-w-full max-h-full object-contain transition-opacity ${frameLoading ? "opacity-30" : "opacity-100"}`}
+                  className={`max-w-full max-h-full object-contain transition-opacity ${frameLoading || frameError ? "opacity-30" : "opacity-100"}`}
                   onLoad={() => setFrameLoading(false)}
-                  onError={() => setFrameLoading(false)}
+                  onError={() => {
+                    setFrameLoading(false);
+                    setFrameError("Frame image unavailable. Reprocess this video so PigeonLab can rebuild its frame cache.");
+                  }}
                 />
               ) : (
                 <span className="text-white/40 text-sm">No frames available</span>
+              )}
+              {frameError && (
+                <div className="absolute inset-0 flex items-center justify-center px-6 text-center">
+                  <div className="max-w-sm rounded-lg border border-white/10 bg-black/70 px-4 py-3 text-white">
+                    <AlertTriangle size={20} className="mx-auto mb-2 text-warning" />
+                    <p className="text-sm font-medium">Frame could not be loaded</p>
+                    <p className="mt-1 text-xs text-white/70">{frameError}</p>
+                  </div>
+                </div>
               )}
             </div>
 

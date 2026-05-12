@@ -8,6 +8,7 @@ All database operations use ``aiosqlite`` for async I/O.
 """
 
 import logging
+import os
 from datetime import datetime
 
 import aiosqlite
@@ -21,6 +22,13 @@ from services.sam3 import get_sam3
 from services.tracker import PigeonTracker
 
 logger = logging.getLogger(__name__)
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
 class VideoProcessor:
@@ -177,13 +185,21 @@ class VideoProcessor:
                         session_id = None
 
                     except Exception as exc:
+                        self._sam3.close_video_session(session_id)
+                        session_id = None
+                        if not _env_bool("PIGEONLAB_SAM3_FALLBACK_PER_FRAME", False):
+                            logger.exception("Video propagation failed and per-frame fallback is disabled")
+                            raise RuntimeError(
+                                "SAM3 video propagation failed before completion. "
+                                "PigeonLab now auto-chunks long videos before processing; "
+                                "if this still happens, use a shorter chunk length or retry "
+                                "this video after restarting the backend."
+                            ) from exc
                         logger.warning(
                             "Video propagation failed (%s), falling back to "
                             "per-frame prediction",
                             exc,
                         )
-                        self._sam3.close_video_session(session_id)
-                        session_id = None
                         tracker.reset()
                         all_features.clear()
                         all_pairwise.clear()

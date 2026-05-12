@@ -11,7 +11,15 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from database import get_db
-from services.ffmpeg_ingest import get_ffmpeg_status, ingest_folder
+from services.ffmpeg_ingest import (
+    default_chunk_seconds,
+    default_output_dir,
+    get_ffmpeg_status,
+    ingest_folder,
+    probe_duration,
+    split_video,
+)
+from services.frame_extractor import FrameExtractor
 from services.sam3 import get_sam3_status
 from services.video_processor import VideoProcessor
 from utils import get_default_reviewer
@@ -40,7 +48,7 @@ class FolderImportRequest(BaseModel):
     input_dir: str = ""
     output_dir: str = ""
     archive_dir: str = ""
-    chunk_seconds: int = Field(default=300, ge=30, le=3600)
+    chunk_seconds: int = Field(default=60, ge=30, le=3600)
     archive_originals: bool = False
     process_now: bool = True
     expected_pigeon_count: int = Field(default=4, ge=0)
@@ -106,6 +114,92 @@ def _form_int(value, default: int = 0) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    import os
+
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _auto_chunk_entries(entries: list[dict]) -> list[dict]:
+    if not _env_bool("PIGEONLAB_VIDEO_AUTO_CHUNK_UPLOADS", True):
+        return entries
+
+    chunk_seconds = default_chunk_seconds()
+    output_dir = default_output_dir()
+    expanded: list[dict] = []
+
+    for entry in entries:
+        path = Path(entry["video_path"])
+        duration = probe_duration(path)
+        if duration is None or duration <= chunk_seconds:
+            expanded.append(entry)
+            continue
+
+        split_result = split_video(path, output_dir, chunk_seconds)
+        chunks = split_result.get("chunks", [])
+        for idx, chunk_path in enumerate(chunks, start=1):
+            chunk = Path(chunk_path)
+            expanded.append(
+                {
+                    **entry,
+                    "video_path": str(chunk.resolve()),
+                    "video_name": chunk.name,
+                    "source_video_name": entry.get("source_video_name", entry["video_name"]),
+                    "source_path": str(chunk.resolve()),
+                    "original_source_path": entry.get("source_path", entry["video_path"]),
+                    "chunk_index": idx,
+                    "chunk_count": len(chunks),
+                }
+            )
+    return expanded
+
+
+def _cleanup_video_data(conn, video_id: int, keep_video_row: bool = False) -> dict:
+    deleted: dict[str, int] = {}
+    # Delete dependent rows by joining through their parent tables.
+    deleted["identity_reviews"] = conn.execute(
+        "DELETE FROM identity_reviews WHERE assignment_id IN "
+        "(SELECT id FROM video_assignments WHERE video_id = ?)",
+        (video_id,),
+    ).rowcount
+    deleted["behavior_labels"] = conn.execute(
+        "DELETE FROM behavior_labels WHERE clip_id IN "
+        "(SELECT id FROM clip_library WHERE video_id = ?)",
+        (video_id,),
+    ).rowcount
+    deleted["droppings_reviews"] = conn.execute(
+        "DELETE FROM droppings_reviews WHERE dropping_id IN "
+        "(SELECT id FROM droppings WHERE video_id = ?)",
+        (video_id,),
+    ).rowcount
+    for table in [
+        "features",
+        "pairwise",
+        "behaviors",
+        "clip_library",
+        "droppings",
+        "qc_flags",
+        "review_tasks",
+        "ai_observations",
+        "video_assignments",
+        "track_edits",
+    ]:
+        deleted[table] = conn.execute(
+            f"DELETE FROM {table} WHERE video_id = ?",
+            (video_id,),
+        ).rowcount
+    if not keep_video_row:
+        deleted["videos"] = conn.execute(
+            "DELETE FROM videos WHERE video_id = ?",
+            (video_id,),
+        ).rowcount
+    deleted["frames"] = FrameExtractor().cleanup_frames(video_id)
+    return deleted
 
 
 # --- Endpoints ---
@@ -198,6 +292,8 @@ async def upload_videos(request: Request):
             {
                 "video_path": str(destination.resolve()),
                 "video_name": original_name,
+                "source_path": str(destination.resolve()),
+                "source_video_name": original_name,
             }
         )
 
@@ -224,6 +320,10 @@ async def upload_videos(request: Request):
             raise HTTPException(status_code=400, detail="camera_assignments must be valid JSON.")
     default_camera_type = str(form.get("camera_type") or form.get("camera") or "Uploaded video")
     session_id = str(form.get("session_id") or "").strip()
+    try:
+        uploaded_entries = _auto_chunk_entries(uploaded_entries)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Video chunking failed: {exc}") from exc
 
     job_id: str | None = None
     queued = 0
@@ -231,12 +331,15 @@ async def upload_videos(request: Request):
         with get_db() as conn:
             job_id = str(uuid.uuid4())
             for entry in uploaded_entries:
-                camera_type = camera_assignments.get(entry["video_name"], default_camera_type)
+                camera_type = camera_assignments.get(
+                    entry["video_name"],
+                    camera_assignments.get(entry.get("source_video_name", ""), default_camera_type),
+                )
                 cursor = conn.execute(
                     """INSERT INTO videos
-                       (video_name, session_id, camera_type, processing_status, processing_error)
-                       VALUES (?, ?, ?, 'queued', NULL)""",
-                    (entry["video_name"], session_id, camera_type),
+                       (video_name, source_path, session_id, camera_type, processing_status, processing_error)
+                       VALUES (?, ?, ?, ?, 'queued', NULL)""",
+                    (entry["video_name"], entry["video_path"], session_id, camera_type),
                 )
                 entry["video_id"] = cursor.lastrowid
                 queued += 1
@@ -320,9 +423,9 @@ async def import_video_folder(req: FolderImportRequest):
                 name = Path(entry["video_path"]).name
                 cursor = conn.execute(
                     """INSERT INTO videos
-                       (video_name, session_id, camera_type, processing_status, processing_error)
-                       VALUES (?, ?, ?, 'queued', NULL)""",
-                    (name, entry["session_id"], "FFmpeg chunk"),
+                       (video_name, source_path, session_id, camera_type, processing_status, processing_error)
+                       VALUES (?, ?, ?, ?, 'queued', NULL)""",
+                    (name, entry["video_path"], entry["session_id"], "FFmpeg chunk"),
                 )
                 new_video_ids.append(cursor.lastrowid)
                 queued += 1
@@ -410,19 +513,35 @@ async def process_videos(req: ProcessRequest):
             details.append(f"Unsupported video format(s): {', '.join(invalid_ext)}")
         raise HTTPException(status_code=400, detail=" ".join(details))
 
+    raw_entries = []
+    for raw_path, path in video_path_entries:
+        name = Path(path).name
+        raw_entries.append(
+            {
+                "raw_path": raw_path,
+                "video_path": path,
+                "video_name": name,
+                "source_path": path,
+                "source_video_name": name,
+                "camera_type": req.camera_assignments.get(raw_path, req.camera_assignments.get(path, "")),
+            }
+        )
+    try:
+        processing_entries = _auto_chunk_entries(raw_entries)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Video chunking failed: {exc}") from exc
+
     with get_db() as conn:
         job_id = str(uuid.uuid4())
         queued = 0
         new_video_ids: list[int] = []
 
-        for raw_path, path in video_path_entries:
-            name = Path(path).name
-            camera = req.camera_assignments.get(raw_path, req.camera_assignments.get(path, ""))
+        for entry in processing_entries:
             cursor = conn.execute(
                 """INSERT INTO videos
-                   (video_name, session_id, camera_type, processing_status, processing_error)
-                   VALUES (?, ?, ?, 'queued', NULL)""",
-                (name, req.session_id, camera),
+                   (video_name, source_path, session_id, camera_type, processing_status, processing_error)
+                   VALUES (?, ?, ?, ?, 'queued', NULL)""",
+                (entry["video_name"], entry["video_path"], req.session_id, entry.get("camera_type", "")),
             )
             new_video_ids.append(cursor.lastrowid)
             queued += 1
@@ -432,11 +551,11 @@ async def process_videos(req: ProcessRequest):
     video_entries = [
         {
             "video_id": vid_id,
-            "video_path": path,
+            "video_path": entry["video_path"],
             "text_prompt": req.text_prompt.strip() or "pigeon",
             "expected_pigeon_count": req.expected_pigeon_count,
         }
-        for vid_id, (_, path) in zip(new_video_ids, video_path_entries)
+        for vid_id, entry in zip(new_video_ids, processing_entries)
     ]
 
     task = asyncio.create_task(_run_processing_job(job_id, video_entries))
@@ -458,6 +577,63 @@ async def get_job_status(job_id: str):
             return {"job_id": job_id, "status": "failed", "error": str(exc)}
         return {"job_id": job_id, "status": "completed"}
     return {"job_id": job_id, "status": "running"}
+
+
+@router.post("/{video_id}/retry")
+async def retry_video(video_id: int):
+    _require_sam3_ready()
+    with get_db() as conn:
+        video = _get_video_or_404(conn, video_id)
+        source_path = video.get("source_path")
+        if not source_path:
+            raise HTTPException(
+                status_code=400,
+                detail="This video was created before source paths were recorded. Re-add the video to process it again.",
+            )
+        path = Path(source_path)
+        if not path.is_file():
+            raise HTTPException(status_code=400, detail=f"Source video file is missing: {source_path}")
+
+        _cleanup_video_data(conn, video_id, keep_video_row=True)
+        conn.execute(
+            """UPDATE videos
+               SET processing_status = 'queued',
+                   processing_error = NULL,
+                   total_frames = NULL,
+                   fps = NULL,
+                   processed_at = NULL,
+                   model_version = NULL,
+                   review_status = 'raw'
+               WHERE video_id = ?""",
+            (video_id,),
+        )
+        conn.commit()
+
+    job_id = str(uuid.uuid4())
+    task = asyncio.create_task(
+        _run_processing_job(
+            job_id,
+            [
+                {
+                    "video_id": video_id,
+                    "video_path": source_path,
+                    "text_prompt": "pigeon",
+                    "expected_pigeon_count": 4,
+                }
+            ],
+        )
+    )
+    _processing_jobs[job_id] = task
+    return {"job_id": job_id, "video_id": video_id, "status": "queued"}
+
+
+@router.delete("/{video_id}")
+async def delete_video(video_id: int):
+    with get_db() as conn:
+        _get_video_or_404(conn, video_id)
+        deleted = _cleanup_video_data(conn, video_id, keep_video_row=False)
+        conn.commit()
+    return {"video_id": video_id, "deleted": True, "rows_deleted": deleted}
 
 
 @router.get("/{video_id}")
