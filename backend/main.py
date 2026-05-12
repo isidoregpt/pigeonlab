@@ -39,6 +39,10 @@ DATA_DIRS = [
 APP_VERSION = "0.1.0"
 _start_time: float = 0.0
 logger = logging.getLogger("pigeonlab.api")
+if os.getenv("PIGEONLAB_STRIPPED_CUDA_ALLOC_CONF"):
+    logger.info(
+        "expandable_segments stripped from PYTORCH_CUDA_ALLOC_CONF - not supported on Windows"
+    )
 
 
 @asynccontextmanager
@@ -50,6 +54,12 @@ async def lifespan(app: FastAPI):
     init_db()
     for warning in get_ffmpeg_status().get("warnings", []):
         logger.warning(warning)
+    sam3_status = get_sam3_status(load_model=False)
+    active_patches = [
+        name for name, active in sam3_status.get("runtime_patches", {}).items() if active
+    ]
+    if active_patches:
+        logger.info("SAM3 runtime patches active: %s", ", ".join(active_patches))
     yield
 
 

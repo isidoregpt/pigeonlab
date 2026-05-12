@@ -22,3 +22,10 @@ The SAM3.1 multiplex checkpoint uses about 5 GB of VRAM for model weights. Durin
 - Below 16 GB VRAM: not supported for SAM3.1 video propagation.
 
 If a machine still fails near the end of a chunk, reduce `PIGEONLAB_VIDEO_CHUNK_SECONDS`, restart the backend, and reprocess only failed chunks.
+
+On Windows, PyTorch's CUDA allocator does not support
+`expandable_segments:True`. PigeonLab strips that token before Torch imports so
+startup logs do not carry a misleading unsupported-platform warning.
+Fragmentation on Windows is managed through auto-chunking and CUDA cleanup after
+each SAM3 session. Linux installs may still opt into allocator-specific settings
+when supported by their PyTorch build.

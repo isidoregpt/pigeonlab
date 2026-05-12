@@ -407,7 +407,7 @@ export default function VideoDetail() {
             </h2>
             {features.length === 0 ? (
               <p className="text-sm text-text-secondary">
-                {video.processing_status !== "completed"
+                {video.processing_status !== "completed" && video.processing_status !== "completed_no_detections"
                   ? "This video hasn't been processed yet."
                   : "No pigeons detected in this frame."}
               </p>
@@ -499,9 +499,15 @@ export default function VideoDetail() {
               )}
               <MetaRow
                 icon={<Users size={14} className="text-text-secondary" />}
-                label="Pigeons"
-                value={String(video.pigeon_count)}
+                label="Tracks"
+                value={String(video.track_count ?? video.pigeon_count ?? 0)}
               />
+              {(video.confirmed_pigeon_count ?? 0) > 0 && (
+                <MetaRow
+                  label="Confirmed Pigeons"
+                  value={String(video.confirmed_pigeon_count)}
+                />
+              )}
               {video.session_id && (
                 <MetaRow label="Session" value={video.session_id} />
               )}

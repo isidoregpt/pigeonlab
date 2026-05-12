@@ -96,6 +96,7 @@ def _chunk_group_status_from_counts(row: dict) -> dict:
     total = int(row.get("chunk_group_total") or 0)
     completed = int(row.get("chunk_group_completed") or 0)
     failed = int(row.get("chunk_group_failed") or 0)
+    no_detections = int(row.get("chunk_group_no_detections") or 0)
     cancelled = int(row.get("chunk_group_cancelled") or 0)
     processing = int(row.get("chunk_group_processing") or 0)
     queued = int(row.get("chunk_group_queued") or 0)
@@ -107,23 +108,26 @@ def _chunk_group_status_from_counts(row: dict) -> dict:
         status = "failed"
     elif cancelled == total:
         status = "cancelled"
-    elif failed > 0 or completed > 0 or cancelled > 0:
+    elif failed > 0 or completed > 0 or cancelled > 0 or no_detections > 0:
         status = "partial"
     elif processing > 0:
         status = "processing"
     else:
         status = "queued"
+    if no_detections and status == "partial":
+        label = f"Partial ({completed} done, {failed} failed, {no_detections} no-detections)"
+    else:
+        label = _chunk_group_status_label(status, completed, failed, total)
     return {
         "chunk_group_total": total,
         "chunk_group_completed": completed,
         "chunk_group_failed": failed,
+        "chunk_group_no_detections": no_detections,
         "chunk_group_cancelled": cancelled,
         "chunk_group_processing": processing,
         "chunk_group_queued": queued,
         "chunk_group_status": status,
-        "chunk_group_status_label": _chunk_group_status_label(
-            status, completed, failed, total,
-        ),
+        "chunk_group_status_label": label,
     }
 
 
@@ -136,6 +140,7 @@ def _chunk_group_statuses(conn, group_ids: list[str]) -> dict[str, dict]:
                    COUNT(*) AS chunk_group_total,
                    SUM(CASE WHEN processing_status = 'completed' THEN 1 ELSE 0 END) AS chunk_group_completed,
                    SUM(CASE WHEN processing_status = 'failed' THEN 1 ELSE 0 END) AS chunk_group_failed,
+                   SUM(CASE WHEN processing_status = 'completed_no_detections' THEN 1 ELSE 0 END) AS chunk_group_no_detections,
                    SUM(CASE WHEN processing_status = 'cancelled' THEN 1 ELSE 0 END) AS chunk_group_cancelled,
                    SUM(CASE WHEN processing_status = 'processing' THEN 1 ELSE 0 END) AS chunk_group_processing,
                    SUM(CASE WHEN processing_status = 'queued' THEN 1 ELSE 0 END) AS chunk_group_queued
@@ -390,7 +395,14 @@ async def list_videos(
 
         offset = (page - 1) * per_page
         rows = conn.execute(
-            f"""SELECT v.*, COUNT(DISTINCT va.pigeon_id) AS pigeon_count
+            f"""SELECT v.*,
+                       COUNT(DISTINCT va.video_obj_id) AS track_count,
+                       COUNT(DISTINCT CASE
+                           WHEN va.review_status = 'approved'
+                            AND va.pigeon_id NOT LIKE 'unknown_%'
+                           THEN va.pigeon_id
+                       END) AS confirmed_pigeon_count,
+                       COUNT(DISTINCT va.pigeon_id) AS pigeon_count
                 FROM videos v
                 LEFT JOIN video_assignments va ON va.video_id = v.video_id
                 GROUP BY v.video_id
@@ -626,6 +638,7 @@ async def _run_processing_job(
     completed = 0
     failed = 0
     cancelled = 0
+    no_detections = 0
     errors = []
     for entry in video_entries:
         video_id = entry["video_id"]
@@ -642,7 +655,7 @@ async def _run_processing_job(
             cancel_event = asyncio.Event()
             _processing_cancel_events[video_id] = cancel_event
             _processing_video_jobs[video_id] = job_id
-            await processor.process_video(
+            result = await processor.process_video(
                 video_id=video_id,
                 video_path=entry["video_path"],
                 text_prompt=entry.get("text_prompt", "pigeon"),
@@ -656,6 +669,10 @@ async def _run_processing_job(
                 ).fetchone()
                 if row and row["processing_status"] == "cancelled":
                     cancelled += 1
+                elif row and row["processing_status"] == "completed_no_detections":
+                    no_detections += 1
+                elif result.get("status") == "completed_no_detections":
+                    no_detections += 1
                 else:
                     completed += 1
         except Exception as exc:
@@ -667,11 +684,11 @@ async def _run_processing_job(
         finally:
             _processing_cancel_events.pop(video_id, None)
             _processing_video_jobs.pop(video_id, None)
-    if failed and not completed and not cancelled:
+    if failed and not completed and not cancelled and not no_detections:
         status = "failed"
-    elif cancelled and not completed and not failed:
+    elif cancelled and not completed and not failed and not no_detections:
         status = "cancelled"
-    elif failed or cancelled:
+    elif failed or cancelled or no_detections:
         status = "partial"
     else:
         status = "completed"
@@ -681,6 +698,7 @@ async def _run_processing_job(
         "videos_completed": completed,
         "videos_failed": failed,
         "videos_cancelled": cancelled,
+        "videos_no_detections": no_detections,
         "errors": errors,
     }
     _processing_jobs.pop(job_id, None)
@@ -949,10 +967,20 @@ async def get_video(video_id: int):
         video = _get_video_or_404(conn, video_id)
 
         row = conn.execute(
-            "SELECT COUNT(DISTINCT pigeon_id) AS cnt FROM video_assignments WHERE video_id = ?",
+            "SELECT COUNT(DISTINCT video_obj_id) AS cnt FROM video_assignments WHERE video_id = ?",
             (video_id,),
         ).fetchone()
-        video["pigeon_count"] = row["cnt"] if row else 0
+        video["track_count"] = row["cnt"] if row else 0
+        video["pigeon_count"] = video["track_count"]
+        confirmed = conn.execute(
+            """SELECT COUNT(DISTINCT pigeon_id) AS cnt
+               FROM video_assignments
+               WHERE video_id = ?
+                 AND review_status = 'approved'
+                 AND pigeon_id NOT LIKE 'unknown_%'""",
+            (video_id,),
+        ).fetchone()
+        video["confirmed_pigeon_count"] = confirmed["cnt"] if confirmed else 0
         _attach_chunk_group_status(conn, [video])
 
     return video
@@ -964,7 +992,14 @@ async def video_status(video_id: int):
         video = _get_video_or_404(conn, video_id)
         _attach_chunk_group_status(conn, [video])
 
-    progress_map = {"queued": 0, "processing": 50, "completed": 100, "failed": 0, "cancelled": 0}
+    progress_map = {
+        "queued": 0,
+        "processing": 50,
+        "completed": 100,
+        "completed_no_detections": 100,
+        "failed": 0,
+        "cancelled": 0,
+    }
     status = video.get("processing_status", "queued")
 
     return {
@@ -976,6 +1011,7 @@ async def video_status(video_id: int):
         "chunk_group_total": video.get("chunk_group_total"),
         "chunk_group_completed": video.get("chunk_group_completed"),
         "chunk_group_failed": video.get("chunk_group_failed"),
+        "chunk_group_no_detections": video.get("chunk_group_no_detections"),
         "chunk_group_cancelled": video.get("chunk_group_cancelled"),
     }
 

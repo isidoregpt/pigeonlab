@@ -43,6 +43,7 @@ export interface FullHealthDiagnostics {
   sam3_ready: boolean;
   sam3_errors: string[];
   sam3_warnings: string[];
+  sam3_patches: Record<string, boolean>;
 }
 
 export function getFullHealthDiagnostics() {

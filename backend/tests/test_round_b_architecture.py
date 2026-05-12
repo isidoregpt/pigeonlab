@@ -7,11 +7,13 @@ contracts that make chunked videos behave like one logical upload.
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 import tempfile
 import types
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -97,6 +99,7 @@ services_frame_extractor_fake.FrameExtractor = FrameExtractor
 sys.modules.setdefault("services.frame_extractor", services_frame_extractor_fake)
 
 import database  # noqa: E402
+import env_loader  # noqa: E402
 from routers import export, review, videos  # noqa: E402
 
 
@@ -208,6 +211,66 @@ class RoundBArchitectureTests(unittest.TestCase):
         self.assertEqual(data["videos"][0]["logical_video_name"], "Pigeon1.mp4")
         self.assertEqual(data["videos"][0]["chunks"], 3)
         self.assertEqual(data["videos"][0]["processing_status"], "partial")
+
+    def test_no_detection_chunk_is_not_counted_as_completed(self) -> None:
+        with database.get_db() as conn:
+            conn.execute(
+                """INSERT INTO videos
+                   (video_id, video_name, logical_video_name, chunk_group_id,
+                    chunk_index, chunk_count, total_frames, processing_status)
+                   VALUES (10, 'Pigeon2_part000.mp4', 'Pigeon2.mp4', 'group-2',
+                           1, 2, 100, 'completed'),
+                          (11, 'Pigeon2_part001.mp4', 'Pigeon2.mp4', 'group-2',
+                           2, 2, 100, 'completed_no_detections')"""
+            )
+            conn.commit()
+            status = videos._chunk_group_statuses(conn, ["group-2"])["group-2"]
+            data = export._report_data(conn, {"period": "all", "approved_only": False})
+
+        self.assertEqual(status["chunk_group_status"], "partial")
+        self.assertEqual(status["chunk_group_completed"], 1)
+        self.assertEqual(status["chunk_group_no_detections"], 1)
+        report_row = next(row for row in data["videos"] if row["logical_video_name"] == "Pigeon2.mp4")
+        self.assertEqual(report_row["processing_status"], "partial")
+        self.assertEqual(report_row["no_detection_chunks"], 1)
+        self.assertEqual(len(data["no_detection_chunks"]), 1)
+
+    def test_video_detail_counts_tracks_and_confirmed_pigeons_separately(self) -> None:
+        video = asyncio.run(videos.get_video(1))
+        self.assertEqual(video["track_count"], 2)
+        self.assertEqual(video["confirmed_pigeon_count"], 2)
+
+
+class RoundDEnvLoaderTests(unittest.TestCase):
+    def test_windows_strips_unsupported_expandable_segments_before_torch_import(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env_path = Path(tmpdir) / ".env"
+            env_path.write_text(
+                "PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128,expandable_segments:True\n",
+                encoding="utf-8",
+            )
+            old_values = {
+                key: os.environ.get(key)
+                for key in [
+                    "PYTORCH_CUDA_ALLOC_CONF",
+                    "PIGEONLAB_STRIPPED_CUDA_ALLOC_CONF",
+                    "PIGEONLAB_ORIGINAL_CUDA_ALLOC_CONF",
+                ]
+            }
+            for key in old_values:
+                os.environ.pop(key, None)
+            try:
+                with mock.patch("sys.platform", "win32"):
+                    env_loader.load_env_file(env_path, override=True)
+                self.assertEqual(os.environ["PYTORCH_CUDA_ALLOC_CONF"], "max_split_size_mb:128")
+                self.assertEqual(os.environ["PIGEONLAB_STRIPPED_CUDA_ALLOC_CONF"], "expandable_segments")
+                self.assertIn("expandable_segments:True", os.environ["PIGEONLAB_ORIGINAL_CUDA_ALLOC_CONF"])
+            finally:
+                for key, value in old_values.items():
+                    if value is None:
+                        os.environ.pop(key, None)
+                    else:
+                        os.environ[key] = value
 
 
 if __name__ == "__main__":

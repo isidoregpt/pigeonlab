@@ -1,7 +1,7 @@
 // --- Status unions ---
 
 export type ReviewStatus = "raw" | "reviewed" | "approved" | "rejected";
-export type ProcessingStatus = "queued" | "processing" | "completed" | "failed" | "cancelled";
+export type ProcessingStatus = "queued" | "processing" | "completed" | "completed_no_detections" | "failed" | "cancelled";
 export type QCFlagStatus = "pending" | "acknowledged" | "resolved";
 export type MatchMethod = "marker" | "appearance" | "spatial" | "manual" | "placeholder" | "manual_chunk_carryover";
 export type QCSeverity = "low" | "medium" | "high" | "critical";
@@ -21,10 +21,11 @@ export interface Video {
   chunk_group_total?: number | null;
   chunk_group_completed?: number | null;
   chunk_group_failed?: number | null;
+  chunk_group_no_detections?: number | null;
   chunk_group_cancelled?: number | null;
   chunk_group_processing?: number | null;
   chunk_group_queued?: number | null;
-  chunk_group_status?: "queued" | "processing" | "completed" | "failed" | "partial" | null;
+  chunk_group_status?: "queued" | "processing" | "completed" | "failed" | "partial" | "cancelled" | null;
   chunk_group_status_label?: string | null;
   session_id: string | null;
   camera_type: string | null;
@@ -37,6 +38,9 @@ export interface Video {
   model_version: string | null;
   config_hash: string | null;
   notes: string | null;
+  track_count?: number | null;
+  confirmed_pigeon_count?: number | null;
+  pigeon_count?: number | null;
 }
 
 export interface Pigeon {

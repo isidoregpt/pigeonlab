@@ -106,6 +106,7 @@ def _report_data(conn, filters: dict) -> dict:
                        COUNT(*) AS chunks,
                        SUM(CASE WHEN processing_status = 'completed' THEN 1 ELSE 0 END) AS completed_chunks,
                        SUM(CASE WHEN processing_status = 'failed' THEN 1 ELSE 0 END) AS failed_chunks,
+                       SUM(CASE WHEN processing_status = 'completed_no_detections' THEN 1 ELSE 0 END) AS no_detection_chunks,
                        SUM(CASE WHEN review_status = 'approved' THEN 1 ELSE 0 END) AS approved_chunks,
                        SUM(COALESCE(total_frames, 0)) AS total_frames,
                        AVG(fps) AS mean_fps,
@@ -118,6 +119,7 @@ def _report_data(conn, filters: dict) -> dict:
             SELECT COUNT(*) AS total_videos,
                    SUM(CASE WHEN completed_chunks = chunks THEN 1 ELSE 0 END) AS completed_videos,
                    SUM(CASE WHEN failed_chunks = chunks THEN 1 ELSE 0 END) AS failed_videos,
+                   SUM(CASE WHEN no_detection_chunks > 0 THEN 1 ELSE 0 END) AS videos_with_no_detection_chunks,
                    SUM(CASE WHEN approved_chunks = chunks THEN 1 ELSE 0 END) AS approved_videos,
                    SUM(total_frames) AS total_frames,
                    ROUND(AVG(mean_fps), 2) AS mean_fps,
@@ -150,6 +152,7 @@ def _report_data(conn, filters: dict) -> dict:
                        COUNT(*) AS chunks,
                        SUM(CASE WHEN processing_status = 'completed' THEN 1 ELSE 0 END) AS completed_chunks,
                        SUM(CASE WHEN processing_status = 'failed' THEN 1 ELSE 0 END) AS failed_chunks,
+                       SUM(CASE WHEN processing_status = 'completed_no_detections' THEN 1 ELSE 0 END) AS no_detection_chunks,
                        SUM(CASE WHEN processing_status = 'processing' THEN 1 ELSE 0 END) AS processing_chunks,
                        SUM(COALESCE(total_frames, 0)) AS total_frames,
                        ROUND(AVG(fps), 2) AS fps,
@@ -167,12 +170,13 @@ def _report_data(conn, filters: dict) -> dict:
                    chunks,
                    completed_chunks,
                    failed_chunks,
+                   no_detection_chunks,
                    total_frames,
                    fps,
                    CASE
                      WHEN completed_chunks = chunks THEN 'completed'
                      WHEN failed_chunks = chunks THEN 'failed'
-                     WHEN failed_chunks > 0 OR completed_chunks > 0 THEN 'partial'
+                     WHEN no_detection_chunks > 0 OR failed_chunks > 0 OR completed_chunks > 0 THEN 'partial'
                      WHEN processing_chunks > 0 THEN 'processing'
                      ELSE 'queued'
                    END AS processing_status,
@@ -182,6 +186,22 @@ def _report_data(conn, filters: dict) -> dict:
             FROM logical_videos
             ORDER BY processed_at DESC, first_video_id DESC
             LIMIT 50""",
+        period_params,
+    )
+
+    no_detection_chunks = _rows(
+        conn,
+        f"""SELECT v.video_id,
+                   COALESCE(v.logical_video_name, v.video_name) AS logical_video_name,
+                   v.video_name,
+                   v.chunk_index,
+                   v.chunk_count,
+                   v.total_frames,
+                   'Chunk produced no detections. Common causes: scene change, occlusion, low contrast, or prompt mismatch.' AS note
+            FROM videos v
+            {period_where}
+              AND v.processing_status = 'completed_no_detections'
+            ORDER BY v.processed_at DESC, v.video_id DESC""",
         period_params,
     )
 
@@ -314,6 +334,7 @@ def _report_data(conn, filters: dict) -> dict:
         "video_summary": video_summary,
         "analysis_counts": analysis_counts,
         "videos": videos,
+        "no_detection_chunks": no_detection_chunks,
         "identity_summary": identity_summary,
         "pigeons": pigeons,
         "zones": zones,
@@ -343,7 +364,8 @@ def _render_report_html(export_id: str, data: dict) -> str:
     .empty { color: #6b7280; font-style: italic; }
     """
     sections = [
-        ("Logical Videos", [("first_video_id", "First chunk ID"), ("logical_video_name", "Video"), ("chunks", "Chunks"), ("completed_chunks", "Completed"), ("failed_chunks", "Failed"), ("session_id", "Session"), ("camera_type", "Camera"), ("total_frames", "Frames"), ("fps", "FPS"), ("processing_status", "Processing"), ("model_version", "Model"), ("processed_at", "Processed"), ("chunk_files", "Chunk files")], data["videos"]),
+        ("Logical Videos", [("first_video_id", "First chunk ID"), ("logical_video_name", "Video"), ("chunks", "Chunks"), ("completed_chunks", "Completed"), ("failed_chunks", "Failed"), ("no_detection_chunks", "No detections"), ("session_id", "Session"), ("camera_type", "Camera"), ("total_frames", "Frames"), ("fps", "FPS"), ("processing_status", "Processing"), ("model_version", "Model"), ("processed_at", "Processed"), ("chunk_files", "Chunk files")], data["videos"]),
+        ("No-Detection Chunks", [("video_id", "Chunk ID"), ("logical_video_name", "Video"), ("video_name", "Chunk file"), ("chunk_index", "Chunk"), ("chunk_count", "Total chunks"), ("total_frames", "Frames"), ("note", "Note")], data["no_detection_chunks"]),
         ("Identity Review Summary", [("review_status", "Review status"), ("match_method", "Match method"), ("assignments", "Assignments")], data["identity_summary"]),
         ("Per-Pigeon Tracking Summary", [("pigeon_id", "Pigeon"), ("frame_observations", "Frame observations"), ("videos", "Videos"), ("mean_confidence", "Mean confidence"), ("mean_velocity_mm_s", "Mean velocity (mm/s)")], data["pigeons"]),
         ("Zone Occupancy", [("zone", "Zone"), ("frame_observations", "Frame observations"), ("estimated_seconds", "Estimated seconds"), ("pigeons", "Pigeons")], data["zones"]),
@@ -374,6 +396,7 @@ def _render_report_html(export_id: str, data: dict) -> str:
   <div class="metrics">
     <div class="metric"><span>Videos</span><strong>{_safe(summary.get("total_videos"))}</strong></div>
     <div class="metric"><span>Completed</span><strong>{_safe(summary.get("completed_videos"))}</strong></div>
+    <div class="metric"><span>No-detection videos</span><strong>{_safe(summary.get("videos_with_no_detection_chunks"))}</strong></div>
     <div class="metric"><span>Approved</span><strong>{_safe(summary.get("approved_videos"))}</strong></div>
     <div class="metric"><span>Total frames</span><strong>{_safe(summary.get("total_frames"))}</strong></div>
     <div class="metric"><span>Feature rows</span><strong>{_safe(counts.get("feature_rows"))}</strong></div>
@@ -403,6 +426,7 @@ def _render_report_md(export_id: str, data: dict) -> str:
         "",
         f"- Videos: {_fmt(summary.get('total_videos'))}",
         f"- Completed videos: {_fmt(summary.get('completed_videos'))}",
+        f"- Videos with no-detection chunks: {_fmt(summary.get('videos_with_no_detection_chunks'))}",
         f"- Approved videos: {_fmt(summary.get('approved_videos'))}",
         f"- Total frames: {_fmt(summary.get('total_frames'))}",
         f"- Feature rows: {_fmt(counts.get('feature_rows'))}",
@@ -412,7 +436,8 @@ def _render_report_md(export_id: str, data: dict) -> str:
         "",
     ]
     sections = [
-        ("Logical Videos", [("first_video_id", "First chunk ID"), ("logical_video_name", "Video"), ("chunks", "Chunks"), ("completed_chunks", "Completed"), ("failed_chunks", "Failed"), ("session_id", "Session"), ("camera_type", "Camera"), ("total_frames", "Frames"), ("fps", "FPS"), ("processing_status", "Processing"), ("model_version", "Model"), ("processed_at", "Processed"), ("chunk_files", "Chunk files")], data["videos"]),
+        ("Logical Videos", [("first_video_id", "First chunk ID"), ("logical_video_name", "Video"), ("chunks", "Chunks"), ("completed_chunks", "Completed"), ("failed_chunks", "Failed"), ("no_detection_chunks", "No detections"), ("session_id", "Session"), ("camera_type", "Camera"), ("total_frames", "Frames"), ("fps", "FPS"), ("processing_status", "Processing"), ("model_version", "Model"), ("processed_at", "Processed"), ("chunk_files", "Chunk files")], data["videos"]),
+        ("No-Detection Chunks", [("video_id", "Chunk ID"), ("logical_video_name", "Video"), ("video_name", "Chunk file"), ("chunk_index", "Chunk"), ("chunk_count", "Total chunks"), ("total_frames", "Frames"), ("note", "Note")], data["no_detection_chunks"]),
         ("Identity Review Summary", [("review_status", "Review status"), ("match_method", "Match method"), ("assignments", "Assignments")], data["identity_summary"]),
         ("Per-Pigeon Tracking Summary", [("pigeon_id", "Pigeon"), ("frame_observations", "Frame observations"), ("videos", "Videos"), ("mean_confidence", "Mean confidence"), ("mean_velocity_mm_s", "Mean velocity (mm/s)")], data["pigeons"]),
         ("Zone Occupancy", [("zone", "Zone"), ("frame_observations", "Frame observations"), ("estimated_seconds", "Estimated seconds"), ("pigeons", "Pigeons")], data["zones"]),

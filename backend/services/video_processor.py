@@ -400,23 +400,29 @@ class VideoProcessor:
                     logger.exception("Gemma reviewer failed for video %d", video_id)
                     gemma_review = {"status": "failed", "error": str(exc)}
 
-                # 12. Mark completed
+                # 12. Mark completed. A zero-detection chunk completed the
+                # pipeline, but should be visible as "no data" in the UI/report.
                 model_version = getattr(self._sam3, "version", "sam3")
+                final_status = (
+                    "completed_no_detections"
+                    if len(unique_track_ids) == 0 and len(all_features) == 0
+                    else "completed"
+                )
                 await conn.execute(
                     """UPDATE videos
-                       SET processing_status = 'completed',
+                       SET processing_status = ?,
                            processed_at = ?,
                            processing_error = NULL,
                            model_version = ?
                        WHERE video_id = ?""",
-                    (datetime.now().isoformat(), model_version, video_id),
+                    (final_status, datetime.now().isoformat(), model_version, video_id),
                 )
                 await conn.commit()
 
                 # 13. Return summary
                 result = {
                     "video_id": video_id,
-                    "status": "completed",
+                    "status": final_status,
                     "total_frames": total_frames,
                     "pigeons_found": len(unique_track_ids),
                     "features_extracted": len(all_features),
