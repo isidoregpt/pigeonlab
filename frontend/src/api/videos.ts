@@ -124,6 +124,7 @@ export function getVideoStatus(id: number) {
     chunk_group_total?: number | null;
     chunk_group_completed?: number | null;
     chunk_group_failed?: number | null;
+    chunk_group_cancelled?: number | null;
   }>(`/videos/${id}/status`);
 }
 
@@ -132,6 +133,16 @@ export function retryVideo(id: number) {
     `/videos/${id}/retry`,
     {},
   );
+}
+
+export function cancelVideo(id: number) {
+  return post<{
+    video_id: number;
+    status: string;
+    cancelled: boolean;
+    cancelled_video_ids?: number[];
+    message?: string;
+  }>(`/videos/${id}/cancel`, {});
 }
 
 export function retryFailedChunkGroup(chunkGroupId: string) {

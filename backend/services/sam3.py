@@ -16,7 +16,7 @@ import sys
 import uuid
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 from PIL import Image
@@ -568,20 +568,24 @@ class SAM3Wrapper:
         session_id: str,
         text_prompt: str,
         max_frames: int = 10000,
+        cancel_check: Callable[[], None] | None = None,
     ) -> dict[int, list[dict]]:
         if not self._loaded:
             raise RuntimeError("Model not loaded. Call load() first.")
 
         if self._using_native:
-            return self._propagate_native(session_id, text_prompt, max_frames)
-        return self._propagate_transformers(session_id, text_prompt, max_frames)
+            return self._propagate_native(session_id, text_prompt, max_frames, cancel_check)
+        return self._propagate_transformers(session_id, text_prompt, max_frames, cancel_check)
 
     def _propagate_native(
         self,
         session_id: str,
         text_prompt: str,
         max_frames: int,
+        cancel_check: Callable[[], None] | None = None,
     ) -> dict[int, list[dict]]:
+        if cancel_check is not None:
+            cancel_check()
         response = self._video_predictor.handle_request(
             request={
                 "type": "add_prompt",
@@ -606,6 +610,8 @@ class SAM3Wrapper:
                 request={"type": "propagate_in_video", "session_id": session_id},
             )
             for packet in stream:
+                if cancel_check is not None:
+                    cancel_check()
                 frame_idx = self._extract_frame_idx(packet, len(results))
                 if frame_idx >= max_frames:
                     break
@@ -613,6 +619,8 @@ class SAM3Wrapper:
             return results
 
         for frame_idx in range(max_frames):
+            if cancel_check is not None:
+                cancel_check()
             response = self._video_predictor.handle_request(
                 request={
                     "type": "get_frame",
@@ -630,8 +638,11 @@ class SAM3Wrapper:
         session_id: str,
         text_prompt: str,
         max_frames: int,
+        cancel_check: Callable[[], None] | None = None,
     ) -> dict[int, list[dict]]:
         session = self._video_sessions[session_id]
+        if cancel_check is not None:
+            cancel_check()
         session = self._video_processor.add_text_prompt(
             inference_session=session,
             text=text_prompt,
@@ -643,6 +654,8 @@ class SAM3Wrapper:
             inference_session=session,
             max_frame_num_to_track=max_frames,
         ):
+            if cancel_check is not None:
+                cancel_check()
             processed = self._video_processor.postprocess_outputs(session, model_outputs)
             frame_idx = int(model_outputs.frame_idx)
             results[frame_idx] = self._parse_detection_container(processed)

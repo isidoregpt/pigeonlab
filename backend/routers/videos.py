@@ -33,6 +33,8 @@ VIDEO_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv"}
 
 _processing_jobs: dict[str, asyncio.Task] = {}
 _processing_job_results: dict[str, dict] = {}
+_processing_cancel_events: dict[int, asyncio.Event] = {}
+_processing_video_jobs: dict[int, str] = {}
 
 
 # --- Schemas ---
@@ -85,6 +87,8 @@ def _chunk_group_status_label(status: str, completed: int, failed: int, total: i
         return f"Partial ({completed}/{total}, {failed} failed)"
     if status == "processing":
         return f"Processing ({completed}/{total})"
+    if status == "cancelled":
+        return f"Cancelled ({completed}/{total})"
     return f"Queued ({completed}/{total})"
 
 
@@ -92,6 +96,7 @@ def _chunk_group_status_from_counts(row: dict) -> dict:
     total = int(row.get("chunk_group_total") or 0)
     completed = int(row.get("chunk_group_completed") or 0)
     failed = int(row.get("chunk_group_failed") or 0)
+    cancelled = int(row.get("chunk_group_cancelled") or 0)
     processing = int(row.get("chunk_group_processing") or 0)
     queued = int(row.get("chunk_group_queued") or 0)
     if total <= 0:
@@ -100,7 +105,9 @@ def _chunk_group_status_from_counts(row: dict) -> dict:
         status = "completed"
     elif failed == total:
         status = "failed"
-    elif failed > 0 or completed > 0:
+    elif cancelled == total:
+        status = "cancelled"
+    elif failed > 0 or completed > 0 or cancelled > 0:
         status = "partial"
     elif processing > 0:
         status = "processing"
@@ -110,6 +117,7 @@ def _chunk_group_status_from_counts(row: dict) -> dict:
         "chunk_group_total": total,
         "chunk_group_completed": completed,
         "chunk_group_failed": failed,
+        "chunk_group_cancelled": cancelled,
         "chunk_group_processing": processing,
         "chunk_group_queued": queued,
         "chunk_group_status": status,
@@ -128,6 +136,7 @@ def _chunk_group_statuses(conn, group_ids: list[str]) -> dict[str, dict]:
                    COUNT(*) AS chunk_group_total,
                    SUM(CASE WHEN processing_status = 'completed' THEN 1 ELSE 0 END) AS chunk_group_completed,
                    SUM(CASE WHEN processing_status = 'failed' THEN 1 ELSE 0 END) AS chunk_group_failed,
+                   SUM(CASE WHEN processing_status = 'cancelled' THEN 1 ELSE 0 END) AS chunk_group_cancelled,
                    SUM(CASE WHEN processing_status = 'processing' THEN 1 ELSE 0 END) AS chunk_group_processing,
                    SUM(CASE WHEN processing_status = 'queued' THEN 1 ELSE 0 END) AS chunk_group_queued
             FROM videos
@@ -333,6 +342,22 @@ def _cleanup_video_data(conn, video_id: int, keep_video_row: bool = False) -> di
         ).rowcount
     deleted["frames"] = FrameExtractor().cleanup_frames(video_id)
     return deleted
+
+
+def _mark_video_cancelled(conn, video_id: int, reason: str = "Cancelled by user") -> None:
+    _cleanup_video_data(conn, video_id, keep_video_row=True)
+    conn.execute(
+        """UPDATE videos
+           SET processing_status = 'cancelled',
+               processing_error = ?,
+               total_frames = NULL,
+               fps = NULL,
+               processed_at = NULL,
+               model_version = NULL,
+               review_status = 'raw'
+           WHERE video_id = ?""",
+        (reason, video_id),
+    )
 
 
 # --- Endpoints ---
@@ -600,27 +625,62 @@ async def _run_processing_job(
     processor = VideoProcessor()
     completed = 0
     failed = 0
+    cancelled = 0
     errors = []
     for entry in video_entries:
+        video_id = entry["video_id"]
         try:
+            with get_db() as conn:
+                row = conn.execute(
+                    "SELECT processing_status FROM videos WHERE video_id = ?",
+                    (video_id,),
+                ).fetchone()
+                if row and row["processing_status"] == "cancelled":
+                    cancelled += 1
+                    continue
+
+            cancel_event = asyncio.Event()
+            _processing_cancel_events[video_id] = cancel_event
+            _processing_video_jobs[video_id] = job_id
             await processor.process_video(
-                video_id=entry["video_id"],
+                video_id=video_id,
                 video_path=entry["video_path"],
                 text_prompt=entry.get("text_prompt", "pigeon"),
                 expected_pigeon_count=entry.get("expected_pigeon_count", 4),
+                cancel_check=cancel_event.is_set,
             )
-            completed += 1
+            with get_db() as conn:
+                row = conn.execute(
+                    "SELECT processing_status FROM videos WHERE video_id = ?",
+                    (video_id,),
+                ).fetchone()
+                if row and row["processing_status"] == "cancelled":
+                    cancelled += 1
+                else:
+                    completed += 1
         except Exception as exc:
             failed += 1
-            errors.append({"video_id": entry["video_id"], "error": str(exc)})
+            errors.append({"video_id": video_id, "error": str(exc)})
             logging.exception(
-                "Processing failed for video_id=%s", entry["video_id"],
+                "Processing failed for video_id=%s", video_id,
             )
+        finally:
+            _processing_cancel_events.pop(video_id, None)
+            _processing_video_jobs.pop(video_id, None)
+    if failed and not completed and not cancelled:
+        status = "failed"
+    elif cancelled and not completed and not failed:
+        status = "cancelled"
+    elif failed or cancelled:
+        status = "partial"
+    else:
+        status = "completed"
     _processing_job_results[job_id] = {
         "job_id": job_id,
-        "status": "failed" if failed and not completed else "partial" if failed else "completed",
+        "status": status,
         "videos_completed": completed,
         "videos_failed": failed,
+        "videos_cancelled": cancelled,
         "errors": errors,
     }
     _processing_jobs.pop(job_id, None)
@@ -774,6 +834,58 @@ async def retry_failed_chunk_group(chunk_group_id: str):
     }
 
 
+@router.post("/{video_id}/cancel")
+async def cancel_video(video_id: int):
+    with get_db() as conn:
+        video = _get_video_or_404(conn, video_id)
+        status = video.get("processing_status")
+        if status not in {"queued", "processing"}:
+            return {
+                "video_id": video_id,
+                "status": status,
+                "cancelled": False,
+                "message": "Video is not queued or processing.",
+            }
+
+        targets = [video]
+        group_id = video.get("chunk_group_id")
+        if group_id:
+            rows = conn.execute(
+                """SELECT * FROM videos
+                   WHERE chunk_group_id = ?
+                     AND chunk_index >= ?
+                     AND processing_status IN ('queued', 'processing')
+                   ORDER BY chunk_index, video_id""",
+                (group_id, int(video.get("chunk_index") or 1)),
+            ).fetchall()
+            targets = [dict(row) for row in rows]
+
+        cancelled_ids: list[int] = []
+        for target in targets:
+            target_id = int(target["video_id"])
+            event = _processing_cancel_events.get(target_id)
+            if event is not None:
+                event.set()
+                conn.execute(
+                    """UPDATE videos
+                       SET processing_status = 'cancelled',
+                           processing_error = 'Cancelled by user'
+                       WHERE video_id = ?""",
+                    (target_id,),
+                )
+            else:
+                _mark_video_cancelled(conn, target_id)
+            cancelled_ids.append(target_id)
+        conn.commit()
+
+    return {
+        "video_id": video_id,
+        "status": "cancelled",
+        "cancelled": True,
+        "cancelled_video_ids": cancelled_ids,
+    }
+
+
 @router.post("/{video_id}/retry")
 async def retry_video(video_id: int):
     _require_sam3_ready()
@@ -852,7 +964,7 @@ async def video_status(video_id: int):
         video = _get_video_or_404(conn, video_id)
         _attach_chunk_group_status(conn, [video])
 
-    progress_map = {"queued": 0, "processing": 50, "completed": 100, "failed": 0}
+    progress_map = {"queued": 0, "processing": 50, "completed": 100, "failed": 0, "cancelled": 0}
     status = video.get("processing_status", "queued")
 
     return {
@@ -864,6 +976,7 @@ async def video_status(video_id: int):
         "chunk_group_total": video.get("chunk_group_total"),
         "chunk_group_completed": video.get("chunk_group_completed"),
         "chunk_group_failed": video.get("chunk_group_failed"),
+        "chunk_group_cancelled": video.get("chunk_group_cancelled"),
     }
 
 

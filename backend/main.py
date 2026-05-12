@@ -19,6 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from database import init_db, get_db, DB_PATH
 from routers import videos, pigeons, insights, review, training, export, stats, settings
 from routers.stats import recent_activity as _activity_handler
+from scripts.setup_check import collect_runtime_diagnostics
 from services.sam3 import get_sam3_status
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -129,3 +130,9 @@ async def health_check():
         "sam3": get_sam3_status(load_model=False),
         "uptime_seconds": uptime_seconds,
     }
+
+
+@app.get("/api/health/full", tags=["health"])
+async def full_health_check():
+    """Return support-ticket diagnostics without forcing model load."""
+    return collect_runtime_diagnostics(load_model=False)
