@@ -23,20 +23,17 @@ $files = foreach ($extension in $extensions) {
 $images = $files |
     Sort-Object Name |
     ForEach-Object {
-        $name = [System.IO.Path]::GetFileNameWithoutExtension($_.Name)
-        $caption = ($name -replace "[-_]+", " ").Trim()
         $encodedName = [System.Uri]::EscapeDataString($_.Name)
         [pscustomobject]@{
             src = "/loading/$encodedName"
-            caption = $caption
         }
     }
 
 $manifest = [pscustomobject]@{
     startupId = Get-Date -Format "yyyyMMdd-HHmmssffff"
     generatedAt = (Get-Date).ToString("o")
-    durationSecondsPerImage = 4.5
-    maxDurationSeconds = 24
+    durationSecondsPerImage = 5.2
+    maxDurationSeconds = 8
     images = @($images)
 }
 
