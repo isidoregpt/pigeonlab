@@ -97,6 +97,11 @@ def configure_logging() -> Path:
     logging.captureWarnings(True)
     _CONFIGURED = True
     logging.getLogger(__name__).info("Logging initialized at %s", log_file)
+    logging.getLogger("pigeonlab.startup").info(
+        "Pre-torch PYTORCH_CUDA_ALLOC_CONF=%s torch_imported=%s",
+        os.environ.get("PYTORCH_CUDA_ALLOC_CONF", "<not set>"),
+        "torch" in sys.modules,
+    )
     log_system_snapshot()
     return log_file
 

@@ -95,6 +95,21 @@ function Invoke-Python($PythonCmd, [string[]]$AdditionalArgs) {
     & $PythonCmd.Exe @($PythonCmd.Args) @AdditionalArgs
 }
 
+function Quote-CmdArg([string]$Value) {
+    return '"' + ($Value -replace '"', '\"') + '"'
+}
+
+function New-PythonVenv($PythonCmd, [string]$VenvPath) {
+    # Run venv creation through cmd.exe so the Python launcher receives
+    # "-3.12" as a literal argv token. Older PowerShell hosts can otherwise
+    # mis-handle launcher switches and drop into the Python REPL.
+    # Do not quote a bare command such as "py"; cmd.exe only applies PATHEXT
+    # lookup to unquoted bare commands. Arguments are still quoted below.
+    $argv = @($PythonCmd.Args) + @("-m", "venv", $VenvPath)
+    $cmdLine = $PythonCmd.Exe + " " + (($argv | ForEach-Object { Quote-CmdArg $_ }) -join " ")
+    & cmd.exe /d /c $cmdLine
+}
+
 function Invoke-Checked([string]$Label, [scriptblock]$Command) {
     & $Command
     if ($LASTEXITCODE -ne 0) {
@@ -215,12 +230,18 @@ try {
     }
     if ($NeedsVenvCreate) {
         Invoke-Checked "Create Python virtual environment" {
-            Invoke-Python -PythonCmd $pythonCmd -Args @("-m", "venv", $VenvPath)
+            New-PythonVenv -PythonCmd $pythonCmd -VenvPath $VenvPath
         }
     }
     if (-not (Test-Path $VenvPython)) {
         throw "Virtual environment Python was not created at $VenvPython"
     }
+
+    if ($env:PIGEONLAB_INSTALL_STOP_AFTER_VENV -and $env:PIGEONLAB_INSTALL_STOP_AFTER_VENV.Trim().ToLower() -in @("1", "true", "yes", "on")) {
+        Write-Warn "Stopping after venv creation because PIGEONLAB_INSTALL_STOP_AFTER_VENV is set."
+        return
+    }
+
     & $VenvPython -c "import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 12) else 1)"
     if ($LASTEXITCODE -ne 0) {
         throw "Virtual environment must use Python 3.12 for the Windows SAM3.1 stack."

@@ -9,6 +9,7 @@ installations still work.
 
 from __future__ import annotations
 
+import inspect
 import json
 import logging
 import os
@@ -151,6 +152,33 @@ def _apply_sam3_runtime_patches() -> None:
             logger.info("Applied SAM3.1 init_state offload_state_to_cpu compatibility patch")
     except Exception:
         logger.debug("SAM3.1 init_state compatibility patch skipped", exc_info=True)
+
+    try:
+        from sam3.model import io_utils  # type: ignore[import-untyped]
+
+        original_loader = io_utils.load_video_frames_from_video_file_using_cv2
+        if not getattr(original_loader, "_pigeonlab_offload_default_patch", False):
+            signature = inspect.signature(original_loader)
+            parameters = list(signature.parameters)
+            offload_position = (
+                parameters.index("offload_video_to_cpu")
+                if "offload_video_to_cpu" in parameters
+                else None
+            )
+
+            def patched_video_loader(*args, **kwargs):
+                offload_supplied_positionally = (
+                    offload_position is not None and len(args) > offload_position
+                )
+                if not offload_supplied_positionally and "offload_video_to_cpu" not in kwargs:
+                    kwargs["offload_video_to_cpu"] = True
+                return original_loader(*args, **kwargs)
+
+            patched_video_loader._pigeonlab_offload_default_patch = True  # type: ignore[attr-defined]
+            io_utils.load_video_frames_from_video_file_using_cv2 = patched_video_loader
+            logger.info("Applied SAM3.1 video loader offload_video_to_cpu default patch")
+    except Exception:
+        logger.debug("SAM3.1 video loader offload default patch skipped", exc_info=True)
 
     if _is_windows():
         try:
