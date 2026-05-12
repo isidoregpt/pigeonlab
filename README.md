@@ -161,6 +161,15 @@ PIGEONLAB_VIDEO_CHUNK_SECONDS=60
 PIGEONLAB_VIDEO_AUTO_CHUNK_UPLOADS=1
 ```
 
+### Research Reports
+
+The Insights page includes a **Research Report** export for publication prep and
+lab review. It creates an HTML report plus a Markdown copy and manifest under
+`data/exports`, summarizing videos, review scope, identities, per-pigeon
+tracking, zone occupancy, behaviors, pairwise proximity, droppings, QC flags,
+and runtime settings. Use the CSV export alongside the report for statistical
+analysis in R, Python, SPSS, or paper reproducibility packages.
+
 ### Frontend
 
 ```bash

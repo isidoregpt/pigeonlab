@@ -9,7 +9,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
-import { ChevronDown, Download, Loader2, AlertTriangle } from "lucide-react";
+import { ChevronDown, Download, FileText, Loader2, AlertTriangle } from "lucide-react";
 import {
   getInsightsHeatmap,
   getInsightsBehaviors,
@@ -22,7 +22,6 @@ import { getPigeons } from "../api/pigeons";
 import { getSessions } from "../api/videos";
 import { usePageTitle } from "../hooks/usePageTitle";
 import HeatmapCanvas from "../components/ui/HeatmapCanvas";
-import { useToast } from "../components/ui/Toast";
 import { formatDuration } from "../utils/formatTime";
 import SectionError from "../components/ui/SectionError";
 
@@ -160,7 +159,6 @@ function SocialMap({
    ================================================================ */
 export default function Insights() {
   usePageTitle("Insights");
-  const toast = useToast();
   const [period, setPeriod] = useState<Period>("week");
   const [pigeonFilter, setPigeonFilter] = useState("all");
   const [periodOpen, setPeriodOpen] = useState(false);
@@ -217,6 +215,25 @@ export default function Insights() {
   const exportMutation = useMutation({
     mutationFn: () =>
       createExport({ format: "csv", include: ["features", "behaviors", "droppings"], filters: { period }, include_manifest: includeManifest }),
+    onSuccess: (data) => {
+      if (data.download_url) {
+        const a = document.createElement("a");
+        a.href = data.download_url;
+        a.download = "";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }
+    },
+  });
+
+  const reportMutation = useMutation({
+    mutationFn: () =>
+      createExport({
+        format: "research_report",
+        filters: { period, approved_only: approvedOnly },
+        include_manifest: true,
+      }),
     onSuccess: (data) => {
       if (data.download_url) {
         const a = document.createElement("a");
@@ -760,7 +777,7 @@ export default function Insights() {
 
       {/* ===== 7. Export Buttons ===== */}
       <p className="text-xs text-text-secondary">
-        Export your data for use in R, Python, or other analysis tools.
+        Export your data for use in R, Python, paper drafts, or reproducibility packages.
       </p>
       <div className="flex items-center gap-3 flex-wrap">
         <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
@@ -773,11 +790,16 @@ export default function Insights() {
           <span className="text-text-secondary">Include reproducibility manifest</span>
         </label>
         <button
-          onClick={() => toast.success("PDF export is planned for a future update. CSV export includes all spatial features, behaviors, and droppings data.")}
+          onClick={() => reportMutation.mutate()}
+          disabled={reportMutation.isPending}
           className="flex items-center gap-1.5 px-4 py-2 border border-border rounded-lg text-sm font-medium text-text-primary hover:bg-bg transition-colors"
         >
-          <Download size={14} />
-          Export as PDF
+          {reportMutation.isPending ? (
+            <Loader2 size={14} className="animate-spin" />
+          ) : (
+            <FileText size={14} />
+          )}
+          Research Report
         </button>
         <button
           onClick={() => exportMutation.mutate()}
@@ -794,8 +816,14 @@ export default function Insights() {
         {exportMutation.isError && (
           <span className="text-sm text-error">Export failed. Please try again.</span>
         )}
+        {reportMutation.isError && (
+          <span className="text-sm text-error">Report failed. Please try again.</span>
+        )}
         {exportMutation.isSuccess && (
           <span className="text-sm text-success">Export started!</span>
+        )}
+        {reportMutation.isSuccess && (
+          <span className="text-sm text-success">Report started!</span>
         )}
       </div>
     </div>
