@@ -78,6 +78,11 @@ interface ExportResponse {
   download_url: string | null;
   files_included: string[];
   rows_exported: number;
+  report_summary?: {
+    videos?: number;
+    feature_rows?: number;
+    pigeons_observed?: number;
+  };
 }
 
 export function createExport(payload: ExportPayload) {
