@@ -25,6 +25,7 @@ from services.video_processor import VideoProcessor
 from utils import get_default_reviewer
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 UPLOADS_DIR = DATA_DIR / "videos" / "uploads"
@@ -142,6 +143,12 @@ def _auto_chunk_entries(entries: list[dict]) -> list[dict]:
 
         split_result = split_video(path, output_dir, chunk_seconds)
         chunks = split_result.get("chunks", [])
+        logger.info(
+            "Auto-chunking %s: %d chunks of %ss each",
+            entry.get("video_name", path.name),
+            len(chunks),
+            chunk_seconds,
+        )
         for idx, chunk_path in enumerate(chunks, start=1):
             chunk = Path(chunk_path)
             expanded.append(
