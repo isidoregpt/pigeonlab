@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 import subprocess
 import shutil
 import sys
@@ -60,6 +61,187 @@ def _get_json(url: str, timeout: int = 3) -> tuple[bool, dict | str]:
         return True, json.loads(body)
     except (OSError, urllib.error.URLError, json.JSONDecodeError) as exc:
         return False, str(exc)
+
+
+def _round_gb(value_bytes: int | float | None) -> float | None:
+    if value_bytes is None:
+        return None
+    return round(float(value_bytes) / (1024 ** 3), 2)
+
+
+def _env_summary() -> dict[str, str]:
+    keys = [
+        "PIGEONLAB_HARDWARE_PROFILE",
+        "PIGEONLAB_SAM3_VERSION",
+        "PIGEONLAB_SAM3_MODEL_DIR",
+        "PIGEONLAB_SAM3_MAX_OBJECTS",
+        "PIGEONLAB_SAM3_MULTIPLEX_COUNT",
+        "PIGEONLAB_SAM3_COMPILE",
+        "PIGEONLAB_SAM3_OFFLOAD_VIDEO_TO_CPU",
+        "PIGEONLAB_SAM3_FALLBACK_PER_FRAME",
+        "PIGEONLAB_VIDEO_CHUNK_SECONDS",
+        "PIGEONLAB_VIDEO_AUTO_CHUNK_UPLOADS",
+        "PIGEONLAB_GEMMA_REVIEW_MODE",
+        "PIGEONLAB_GEMMA_MODEL",
+        "PYTORCH_CUDA_ALLOC_CONF",
+    ]
+    return {key: os.getenv(key, "") for key in keys if os.getenv(key) is not None}
+
+
+def _torch_snapshot() -> dict:
+    snapshot = {
+        "torch_version": None,
+        "cuda_version": None,
+        "gpu_name": None,
+        "vram_total_gb": None,
+        "vram_used_gb": None,
+        "vram_free_gb": None,
+    }
+    try:
+        import torch
+    except ImportError:
+        return snapshot
+
+    snapshot["torch_version"] = torch.__version__
+    snapshot["cuda_version"] = torch.version.cuda
+    if not torch.cuda.is_available():
+        return snapshot
+
+    try:
+        free_bytes, total_bytes = torch.cuda.mem_get_info(0)
+        used_bytes = total_bytes - free_bytes
+    except Exception:
+        props = torch.cuda.get_device_properties(0)
+        total_bytes = int(props.total_memory)
+        used_bytes = torch.cuda.memory_allocated(0)
+        free_bytes = max(0, total_bytes - used_bytes)
+
+    snapshot.update(
+        {
+            "gpu_name": torch.cuda.get_device_name(0),
+            "vram_total_gb": _round_gb(total_bytes),
+            "vram_used_gb": _round_gb(used_bytes),
+            "vram_free_gb": _round_gb(free_bytes),
+        }
+    )
+    return snapshot
+
+
+def _database_snapshot() -> dict:
+    snapshot = {
+        "last_processing_error": None,
+        "active_jobs": 0,
+    }
+    try:
+        from database import get_db
+
+        with get_db() as conn:
+            row = conn.execute(
+                """SELECT video_id, processing_error, processed_at
+                   FROM videos
+                   WHERE processing_status = 'failed'
+                     AND processing_error IS NOT NULL
+                   ORDER BY COALESCE(processed_at, '') DESC, video_id DESC
+                   LIMIT 1"""
+            ).fetchone()
+            if row:
+                snapshot["last_processing_error"] = {
+                    "video_id": row["video_id"],
+                    "error": row["processing_error"],
+                    "timestamp": row["processed_at"],
+                }
+            active = conn.execute(
+                "SELECT COUNT(*) AS cnt FROM videos WHERE processing_status = 'processing'"
+            ).fetchone()
+            snapshot["active_jobs"] = active["cnt"] if active else 0
+    except Exception as exc:
+        snapshot["database_error"] = str(exc)
+    return snapshot
+
+
+def collect_runtime_diagnostics(load_model: bool = False) -> dict:
+    """Collect the structured diagnostics used by /api/health/full."""
+    try:
+        from services.ffmpeg_ingest import get_ffmpeg_status
+    except Exception:
+        get_ffmpeg_status = None  # type: ignore[assignment]
+    try:
+        from services.sam3 import get_sam3_status
+    except Exception:
+        get_sam3_status = None  # type: ignore[assignment]
+
+    torch_info = _torch_snapshot()
+    sam3_status = (
+        get_sam3_status(load_model=load_model)
+        if get_sam3_status is not None
+        else {"loaded": False, "version": os.getenv("PIGEONLAB_SAM3_VERSION", "sam3.1"), "backend": None}
+    )
+
+    ffmpeg_status = get_ffmpeg_status() if get_ffmpeg_status is not None else {"available": False}
+
+    gemma_model = os.getenv("PIGEONLAB_GEMMA_MODEL", "gemma4:e4b")
+    gemma_base_url = os.getenv("PIGEONLAB_GEMMA_BASE_URL", "http://localhost:11434").rstrip("/")
+    ollama_ok, ollama_data = _get_json(f"{gemma_base_url}/api/tags")
+    installed_models: list[str] = []
+    if ollama_ok and isinstance(ollama_data, dict):
+        installed_models = sorted(
+            item.get("name", "")
+            for item in ollama_data.get("models", [])
+            if item.get("name")
+        )
+
+    db_info = _database_snapshot()
+    return {
+        "model_loaded": bool(sam3_status.get("loaded")),
+        "sam3_version": sam3_status.get("version"),
+        "sam3_backend": sam3_status.get("backend"),
+        "gpu_name": torch_info["gpu_name"] or sam3_status.get("gpu_name"),
+        "vram_total_gb": torch_info["vram_total_gb"],
+        "vram_used_gb": torch_info["vram_used_gb"],
+        "vram_free_gb": torch_info["vram_free_gb"],
+        "cuda_version": torch_info["cuda_version"] or sam3_status.get("cuda_version"),
+        "torch_version": torch_info["torch_version"] or sam3_status.get("torch_version"),
+        "python_version": platform.python_version(),
+        "hardware_profile": os.getenv("PIGEONLAB_HARDWARE_PROFILE", "default"),
+        "last_processing_error": db_info.get("last_processing_error"),
+        "active_jobs": db_info.get("active_jobs", 0),
+        "env_summary": _env_summary(),
+        "ffmpeg_available": bool(ffmpeg_status.get("available")),
+        "ffmpeg_path": ffmpeg_status.get("ffmpeg_path"),
+        "ollama_reachable": bool(ollama_ok),
+        "gemma_model_present": gemma_model in installed_models,
+        "gemma_model": gemma_model,
+        "gemma_installed_models": installed_models,
+        "sam3_ready": sam3_status.get("ready", False),
+        "sam3_errors": sam3_status.get("errors", []),
+        "sam3_warnings": sam3_status.get("warnings", []),
+    }
+
+
+def run_optional_smoke_check() -> None:
+    """Run the smoke test when explicitly requested by environment."""
+    if os.getenv("PIGEONLAB_RUN_SMOKE_TEST", "").strip().lower() not in {"1", "true", "yes", "on"}:
+        print("  [INFO] Smoke test: skipped (set PIGEONLAB_RUN_SMOKE_TEST=1 to run)")
+        return
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "backend.tests.smoke_test"],
+            capture_output=True,
+            text=True,
+            timeout=90,
+        )
+        ok = result.returncode == 0
+        output = (result.stdout or result.stderr).strip()
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        ok = False
+        output = str(exc)
+    first_line = output.splitlines()[0] if output else ""
+    check(
+        "Smoke test",
+        ok,
+        first_line or "completed",
+        "Run python -m backend.tests.smoke_test from the project root.",
+    )
 
 
 def run_checks() -> None:
@@ -285,6 +467,7 @@ def run_checks() -> None:
         "OK" if db.exists() else "Not found",
         "Run the backend once to auto-create the database.",
     )
+    run_optional_smoke_check()
 
     print()
     print("-" * 60)

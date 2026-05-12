@@ -19,6 +19,36 @@ export function getSystemInfo() {
   return get<SystemInfo>("/settings/info");
 }
 
+export interface FullHealthDiagnostics {
+  model_loaded: boolean;
+  sam3_version: string | null;
+  sam3_backend: string | null;
+  gpu_name: string | null;
+  vram_total_gb: number | null;
+  vram_used_gb: number | null;
+  vram_free_gb: number | null;
+  cuda_version: string | null;
+  torch_version: string | null;
+  python_version: string;
+  hardware_profile: string;
+  last_processing_error: { video_id: number; error: string; timestamp: string | null } | null;
+  active_jobs: number;
+  env_summary: Record<string, string>;
+  ffmpeg_available: boolean;
+  ffmpeg_path?: string | null;
+  ollama_reachable: boolean;
+  gemma_model_present: boolean;
+  gemma_model: string;
+  gemma_installed_models: string[];
+  sam3_ready: boolean;
+  sam3_errors: string[];
+  sam3_warnings: string[];
+}
+
+export function getFullHealthDiagnostics() {
+  return get<FullHealthDiagnostics>("/health/full");
+}
+
 export interface Sam3Info {
   ready: boolean;
   loaded: boolean;

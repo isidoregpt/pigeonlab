@@ -123,6 +123,9 @@ A6000 48GB, and fast NVMe storage:
 - Use `PIGEONLAB_FFMPEG_THREADS=32` and `PIGEONLAB_FFMPEG_USE_NVENC=1` for FFmpeg fallback re-encoding.
 - Use `PIGEONLAB_OPENCV_THREADS=32`, `OMP_NUM_THREADS=32`, and `MKL_NUM_THREADS=32` while leaving CPU headroom for the OS.
 
+See [docs/memory-model.md](./docs/memory-model.md) for the SAM3.1 CPU RAM/VRAM
+budget, auto-chunking rationale, and recommended per-GPU overrides.
+
 ### Logs
 
 Runtime logs are intentionally verbose:

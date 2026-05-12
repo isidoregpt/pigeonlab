@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, BrainCircuit, CheckCircle2, Loader2, Save } from "lucide-react";
+import { AlertTriangle, BrainCircuit, CheckCircle2, Copy, Loader2, Save } from "lucide-react";
 import { usePageTitle } from "../hooks/usePageTitle";
 import {
   getZones,
   getSystemInfo,
+  getFullHealthDiagnostics,
   getSam3Info,
   getGemmaInfo,
   updateGemmaSettings,
@@ -36,6 +37,12 @@ export default function LabSetup() {
   const sam3Query = useQuery({
     queryKey: ["settings-sam3"],
     queryFn: getSam3Info,
+  });
+
+  const diagnosticsQuery = useQuery({
+    queryKey: ["health-full"],
+    queryFn: getFullHealthDiagnostics,
+    enabled: false,
   });
 
   const gemmaQuery = useQuery({
@@ -92,6 +99,21 @@ export default function LabSetup() {
 
   const zones = zonesQuery.data?.zones ?? [];
   const info = infoQuery.data;
+
+  const copyDiagnostics = async () => {
+    const result = await diagnosticsQuery.refetch();
+    if (!result.data) {
+      toast.error("Could not collect diagnostics.");
+      return;
+    }
+    const text = JSON.stringify(result.data, null, 2);
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success("Diagnostics copied to clipboard.");
+    } catch {
+      window.prompt("Copy diagnostics", text);
+    }
+  };
 
   return (
     <div className="space-y-8 max-w-3xl">
@@ -164,9 +186,23 @@ export default function LabSetup() {
 
       {/* System Info */}
       <section className="bg-surface border border-border rounded-xl p-5 space-y-4">
-        <h2 className="text-sm font-semibold text-text-primary">
-          System Info
-        </h2>
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold text-text-primary">
+            System Info
+          </h2>
+          <button
+            onClick={() => copyDiagnostics()}
+            disabled={diagnosticsQuery.isFetching}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-border text-[12px] font-medium text-text-secondary rounded-lg hover:bg-bg transition-colors disabled:opacity-40"
+          >
+            {diagnosticsQuery.isFetching ? (
+              <Loader2 size={13} className="animate-spin" />
+            ) : (
+              <Copy size={13} />
+            )}
+            Copy diagnostics
+          </button>
+        </div>
 
         {infoQuery.isLoading ? (
           <div className="flex items-center gap-2 text-sm text-text-secondary">

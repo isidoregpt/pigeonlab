@@ -1,10 +1,12 @@
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, Camera, Film, Loader2, Play, RotateCcw, Trash2, Users } from "lucide-react";
+import { AlertCircle, Camera, CircleStop, Film, Loader2, Play, RotateCcw, Trash2, Users } from "lucide-react";
+import { useState } from "react";
 import type { Video } from "../../types";
 import StatusBadge from "./StatusBadge";
-import { deleteVideo, getVideoStatus, retryFailedChunkGroup, retryVideo } from "../../api/videos";
+import { cancelVideo, deleteVideo, getVideoStatus, retryFailedChunkGroup, retryVideo } from "../../api/videos";
 import { useToast } from "./Toast";
+import ConfirmDialog from "./ConfirmDialog";
 
 interface VideoCardProps {
   video: Video;
@@ -20,6 +22,7 @@ export default function VideoCard({ video }: VideoCardProps) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const toast = useToast();
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const isProcessing = video.processing_status === "processing";
 
   const { data: statusData } = useQuery({
@@ -71,6 +74,22 @@ export default function VideoCard({ video }: VideoCardProps) {
     },
     onError: (err) => {
       toast.error(err instanceof Error ? err.message : "Could not retry failed chunks");
+    },
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: () => cancelVideo(video.video_id),
+    onSuccess: (result) => {
+      toast.success(
+        result.cancelled_video_ids && result.cancelled_video_ids.length > 1
+          ? `Cancelled ${result.cancelled_video_ids.length} queued/processing chunks`
+          : "Processing cancelled",
+      );
+      setShowCancelConfirm(false);
+      refreshVideos();
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : "Could not cancel processing");
     },
   });
 
@@ -153,6 +172,21 @@ export default function VideoCard({ video }: VideoCardProps) {
         </div>
 
         <div className="flex items-center gap-1 shrink-0">
+          {isProcessing && (
+            <button
+              onClick={() => setShowCancelConfirm(true)}
+              disabled={cancelMutation.isPending || deleteMutation.isPending}
+              className="p-1.5 rounded-lg border border-border text-text-secondary hover:text-error hover:bg-error/5 transition-colors disabled:opacity-40"
+              title="Cancel processing"
+              aria-label={`Cancel processing of ${video.video_name}`}
+            >
+              {cancelMutation.isPending ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <CircleStop size={14} />
+              )}
+            </button>
+          )}
           {video.processing_status === "failed" && (
             <button
               onClick={() => retryMutation.mutate()}
@@ -210,6 +244,17 @@ export default function VideoCard({ video }: VideoCardProps) {
           </p>
         </details>
       )}
+
+      <ConfirmDialog
+        open={showCancelConfirm}
+        title="Cancel processing?"
+        message={`Cancel processing of ${video.video_name}? Partial results will be discarded.`}
+        confirmLabel="Cancel Processing"
+        variant="danger"
+        loading={cancelMutation.isPending}
+        onConfirm={() => cancelMutation.mutate()}
+        onCancel={() => setShowCancelConfirm(false)}
+      />
 
       {/* Progress bar at bottom of card */}
       {isProcessing && (
