@@ -254,12 +254,12 @@ class VideoProcessor:
 
                         features = feature_extractor.compute_features(
                             frame_idx=frame_num,
-                                video_id=video_id,
-                                tracked_detections=tracked,
-                                frame_shape=frame_shape,
-                                prev_detections=prev_tracked,
-                                fps=fps,
-                            )
+                            video_id=video_id,
+                            tracked_detections=tracked,
+                            frame_shape=frame_shape,
+                            prev_detections=prev_tracked,
+                            fps=fps,
+                        )
                         pairwise = feature_extractor.compute_pairwise(
                             frame_idx=frame_num,
                             video_id=video_id,

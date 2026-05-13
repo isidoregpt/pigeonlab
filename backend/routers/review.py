@@ -618,7 +618,11 @@ async def apply_chunk_carryover_identities(body: ChunkCarryoverRequest):
                     old_pigeon,
                     new_pigeon,
                     body.reviewer,
-                    f"Same as previous chunk assignment {suggestion['previous_assignment_id']} ({suggestion['match_basis']}).",
+                    (
+                        "Same as previous chunk assignment "
+                        f"{suggestion['previous_assignment_id']} "
+                        f"({suggestion['match_basis']})."
+                    ),
                 ),
             )
             applied += 1
