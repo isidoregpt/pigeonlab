@@ -9,19 +9,19 @@ from env_loader import load_env_file
 
 load_env_file()
 
-from logging_config import configure_logging
+from logging_config import configure_logging  # noqa: E402
 
 configure_logging()
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI  # noqa: E402
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 
-from database import init_db, get_db, DB_PATH
-from routers import videos, pigeons, insights, review, training, export, stats, settings
-from routers.stats import recent_activity as _activity_handler
-from scripts.setup_check import collect_runtime_diagnostics
-from services.ffmpeg_ingest import get_ffmpeg_status
-from services.sam3 import get_sam3_status
+from database import init_db, get_db, DB_PATH  # noqa: E402
+from routers import videos, pigeons, insights, review, training, export, stats, settings  # noqa: E402
+from routers.stats import recent_activity as _activity_handler  # noqa: E402
+from scripts.setup_check import collect_runtime_diagnostics  # noqa: E402
+from services.ffmpeg_ingest import get_ffmpeg_status  # noqa: E402
+from services.sam3 import get_sam3_status  # noqa: E402
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIRS = [

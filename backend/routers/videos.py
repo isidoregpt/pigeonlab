@@ -140,7 +140,8 @@ def _chunk_group_statuses(conn, group_ids: list[str]) -> dict[str, dict]:
                    COUNT(*) AS chunk_group_total,
                    SUM(CASE WHEN processing_status = 'completed' THEN 1 ELSE 0 END) AS chunk_group_completed,
                    SUM(CASE WHEN processing_status = 'failed' THEN 1 ELSE 0 END) AS chunk_group_failed,
-                   SUM(CASE WHEN processing_status = 'completed_no_detections' THEN 1 ELSE 0 END) AS chunk_group_no_detections,
+                   SUM(CASE WHEN processing_status = 'completed_no_detections' THEN 1 ELSE 0 END)
+                       AS chunk_group_no_detections,
                    SUM(CASE WHEN processing_status = 'cancelled' THEN 1 ELSE 0 END) AS chunk_group_cancelled,
                    SUM(CASE WHEN processing_status = 'processing' THEN 1 ELSE 0 END) AS chunk_group_processing,
                    SUM(CASE WHEN processing_status = 'queued' THEN 1 ELSE 0 END) AS chunk_group_queued
@@ -913,7 +914,10 @@ async def retry_video(video_id: int):
         if not source_path:
             raise HTTPException(
                 status_code=400,
-                detail="This video was created before source paths were recorded. Re-add the video to process it again.",
+                detail=(
+                    "This video was created before source paths were recorded. "
+                    "Re-add the video to process it again."
+                ),
             )
         path = Path(source_path)
         if not path.is_file():

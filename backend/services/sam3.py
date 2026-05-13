@@ -191,7 +191,11 @@ def _apply_sam3_runtime_patches() -> None:
                     if getattr(module, "load_video_frames_from_video_file_using_cv2", None) is original_loader:
                         setattr(module, "load_video_frames_from_video_file_using_cv2", patched_loader)
                 except Exception:
-                    logger.debug("Could not patch %s.load_video_frames_from_video_file_using_cv2", module_name, exc_info=True)
+                    logger.debug(
+                        "Could not patch %s.load_video_frames_from_video_file_using_cv2",
+                        module_name,
+                        exc_info=True,
+                    )
             _mark_patch(
                 "load_video_frames_offload_video_to_cpu_default",
                 "Applied SAM3.1 load_video_frames offload_video_to_cpu default patch",

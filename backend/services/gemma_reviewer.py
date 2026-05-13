@@ -254,7 +254,7 @@ def _extract_json(text: str) -> dict:
     start = raw.find("{")
     end = raw.rfind("}")
     if start >= 0 and end > start:
-        parsed = json.loads(raw[start : end + 1])
+        parsed = json.loads(raw[start: end + 1])
         return parsed if isinstance(parsed, dict) else {"items": parsed}
     return {}
 

@@ -82,18 +82,22 @@ sys.modules.setdefault("services.sam3", services_sam3_fake)
 
 services_video_processor_fake = types.ModuleType("services.video_processor")
 
+
 class VideoProcessor:
     async def process_video(self, *_args, **_kwargs):
         return {"status": "completed"}
+
 
 services_video_processor_fake.VideoProcessor = VideoProcessor
 sys.modules.setdefault("services.video_processor", services_video_processor_fake)
 
 services_frame_extractor_fake = types.ModuleType("services.frame_extractor")
 
+
 class FrameExtractor:
     def cleanup_frames(self, _video_id: int) -> int:
         return 0
+
 
 services_frame_extractor_fake.FrameExtractor = FrameExtractor
 sys.modules.setdefault("services.frame_extractor", services_frame_extractor_fake)
