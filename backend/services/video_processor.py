@@ -93,6 +93,7 @@ class VideoProcessor:
             Exception: Re-raised after marking the video as failed.
         """
         db_path = get_db_path()
+        session_id: str | None = None
 
         def raise_if_cancelled() -> None:
             if cancel_check is not None and cancel_check():
@@ -143,7 +144,6 @@ class VideoProcessor:
                 all_qc_flags: list[dict] = []
                 prev_features: list[dict] | None = None
                 prev_tracked: list[dict] | None = None
-                session_id: str | None = None
 
                 if use_video_api:
                     raise_if_cancelled()

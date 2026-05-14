@@ -1,3 +1,5 @@
+--extra-index-url https://download.pytorch.org/whl/cu126
+
 fastapi
 uvicorn[standard]
 python-multipart
@@ -6,8 +8,9 @@ aiosqlite>=0.19.0
 pillow
 numpy>=1.26,<2
 opencv-python>=4.8.0,<4.11
-torch
-torchvision
+torch==2.11.0+cu126
+torchvision==0.26.0+cu126
+torchaudio==2.11.0+cu126
 supervision>=0.18.0
 huggingface_hub>=0.20.0
 einops>=0.7.0

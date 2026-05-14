@@ -28,8 +28,10 @@ install.bat
 
 The installer creates an optimized `.env`, installs Python/Node/Git/FFmpeg/Ollama
 with WinGet when missing, creates `backend/venv`, installs the CUDA PyTorch
-stack, installs SAM3.1 from GitHub, runs `npm install`, pulls the configured
-Gemma model with Ollama, optionally downloads the gated SAM3.1 checkpoint, and
+stack pinned to the workstation-tested `torch==2.11.0+cu126` family, installs
+SAM3.1 from GitHub, runs `npm install`, pulls the configured Gemma model with
+Ollama, optionally downloads the gated SAM3.1 checkpoint from cached
+Hugging Face auth, and
 runs the setup checker. Installer logs are written to `data/logs/install-*.log`.
 The workstation profile assumes a 48GB GPU; for 24GB or smaller GPUs, see
 [docs/memory-model.md](./docs/memory-model.md).
@@ -71,6 +73,9 @@ SAM3.1 uses the official `facebookresearch/sam3` package and a local
 checkpoint. On Windows, use Python 3.12 for the virtual environment. The
 installer handles this automatically, including the `triton-windows`, NumPy, and
 OpenCV versions that avoid the common SAM3.1 Windows import/runtime failures.
+Run `hf auth login` before `install.bat` if you want the installer to download
+the gated checkpoint automatically. The installer no longer asks you to paste a
+hidden token into cmd.exe because that paste path is unreliable on Windows.
 After installing `backend/requirements.txt`, install the SAM3 repo:
 
 ```bash
@@ -122,7 +127,9 @@ A6000 48GB, and fast NVMe storage:
   `PIGEONLAB_SAM3_FALLBACK_PER_FRAME=0` so long-video failures are surfaced
   clearly instead of silently degrading to non-temporal per-frame detections.
 - Keep `PIGEONLAB_REID_ENABLED=1` to merge short within-chunk track fragments
-  before exports and Identity Review are populated.
+  before exports and Identity Review are populated. The default Re-ID profile
+  allows up to 90 frames of absence and uses conservative appearance matching
+  when a pigeon leaves and re-enters the frame.
 - Use `PIGEONLAB_TORCH_DTYPE=auto`; the backend chooses CUDA bfloat16 when supported and float16 otherwise.
 - Keep `PIGEONLAB_SAM3_ENABLE_WINDOWS_PATCHES=1` on Windows. It applies narrow SAM3.1 compatibility patches for the native multiplex predictor and SDPA fallback kernels.
 - Use `PIGEONLAB_FFMPEG_THREADS=32` and `PIGEONLAB_FFMPEG_USE_NVENC=1` for FFmpeg fallback re-encoding.
@@ -190,6 +197,14 @@ lab review. It creates an HTML report plus a Markdown copy and manifest under
 tracking, zone occupancy, behaviors, pairwise proximity, droppings, QC flags,
 and runtime settings. Use the CSV export alongside the report for statistical
 analysis in R, Python, SPSS, or paper reproducibility packages.
+
+### Research Workflows
+
+PigeonLab supports rotation-style social behavior studies where one bird is
+cycled into or out of an enclosure while researchers measure how the remaining
+birds respond. Use Identity Review to confirm the same named pigeons across
+chunks/sessions, then compare Pairwise Map, zone occupancy, heatmaps, and the
+Research Report across baseline, rotation, and recovery videos.
 
 ### Frontend
 

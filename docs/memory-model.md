@@ -14,7 +14,16 @@ The SAM3.1 multiplex checkpoint uses about 5 GB of VRAM for model weights. Durin
 - `PIGEONLAB_VIDEO_CHUNK_SECONDS`: lower this if propagation still hits VRAM limits.
 - `PIGEONLAB_VIDEO_AUTO_CHUNK_UPLOADS`: keep `1` so uploads and path-based adds are chunked before processing.
 - `PIGEONLAB_REID_ENABLED`: keep `1` to merge short within-chunk track fragments before feature rows are written.
-- `PIGEONLAB_REID_APPEARANCE_THRESHOLD`, `PIGEONLAB_REID_GAP_FRAMES`, and `PIGEONLAB_REID_SPATIAL_THRESHOLD_PX`: tune conservative color/spatial matching when pigeons leave and re-enter the frame.
+- `PIGEONLAB_REID_APPEARANCE_THRESHOLD`, `PIGEONLAB_REID_GAP_FRAMES`, and `PIGEONLAB_REID_SPATIAL_THRESHOLD_PX`: tune conservative color/spatial matching when pigeons leave and re-enter the frame. The workstation defaults are `0.55`, `90`, and `240`.
+
+## PyTorch Stack
+
+Windows workstation installs pin the CUDA PyTorch stack to
+`torch==2.11.0+cu126`, `torchvision==0.26.0+cu126`, and
+`torchaudio==2.11.0+cu126`. This is the known-good stack for RTX A6000 systems
+that still run older lab-approved NVIDIA drivers such as 531.14. PyTorch 2.12
+with CUDA 12.6 may require a newer NVIDIA driver; `setup_check.py` flags that
+combination instead of reporting a clean pass.
 
 ## Recommended Profiles
 

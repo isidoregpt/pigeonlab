@@ -7,6 +7,7 @@ All notable changes to PigeonLab are documented here. This project follows the
 
 ### Added
 
+- Round E v5 follow-up report with workstation verification commands.
 - CHANGELOG and contribution guidance requiring future PRs to update it.
 - SAM3 runtime patch diagnostics in `/api/health/full`, including the load-video CPU offload patch state.
 - `completed_no_detections` video status for chunks that finish without any detections.
@@ -21,6 +22,13 @@ All notable changes to PigeonLab are documented here. This project follows the
 - Renamed the Video Detail count label from Pigeons to Tracks and added Confirmed Pigeons after identity review.
 - Windows installs no longer write unsupported `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`; the backend strips that token defensively if an older `.env` still contains it.
 - Aggregated sparse/missing detection QC into chunk-level flags and made motion QC fps-aware.
+- Windows installs now pin the CUDA PyTorch stack to the known-good `2.11.0+cu126` family and avoid hidden Hugging Face token prompts.
+- Within-chunk Re-ID defaults now tolerate longer gaps and larger re-entry jumps when appearance is a strong match.
+
+### Fixed
+
+- SAM3 model-load failures no longer trigger a secondary `UnboundLocalError` during session cleanup.
+- `setup_check.py` now flags incompatible Windows `torch>=2.12` plus older NVIDIA driver combinations.
 
 ## [0.3.0] - 2026-05-12
 
