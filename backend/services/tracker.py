@@ -69,15 +69,15 @@ class PigeonTracker:
             if reid_enabled is None else reid_enabled
         )
         self._reid_appearance_threshold = (
-            self._env_float("PIGEONLAB_REID_APPEARANCE_THRESHOLD", 0.3)
+            self._env_float("PIGEONLAB_REID_APPEARANCE_THRESHOLD", 0.55)
             if reid_appearance_threshold is None else reid_appearance_threshold
         )
         self._reid_gap_frames = (
-            self._env_int("PIGEONLAB_REID_GAP_FRAMES", max_lost_frames)
+            self._env_int("PIGEONLAB_REID_GAP_FRAMES", 90)
             if reid_gap_frames is None else reid_gap_frames
         )
         self._reid_spatial_threshold_px = (
-            self._env_float("PIGEONLAB_REID_SPATIAL_THRESHOLD_PX", 120.0)
+            self._env_float("PIGEONLAB_REID_SPATIAL_THRESHOLD_PX", 240.0)
             if reid_spatial_threshold_px is None else reid_spatial_threshold_px
         )
 
@@ -167,6 +167,7 @@ class PigeonTracker:
 
         mapping: dict[int, int] = {}
         tracks = sorted(self._tracks, key=lambda track: track.first_seen_frame)
+        candidates_evaluated = 0
         for current in tracks:
             if not current.centroid_history:
                 continue
@@ -186,14 +187,30 @@ class PigeonTracker:
                     previous.centroid_history[-1],
                     current.centroid_history[0],
                 )
-                if spatial_distance > self._reid_spatial_threshold_px:
-                    continue
 
                 appearance_distance = self._track_appearance_distance(previous, current)
+                candidates_evaluated += 1
                 if appearance_distance > self._reid_appearance_threshold:
                     continue
 
-                score = appearance_distance + (spatial_distance / max(self._reid_spatial_threshold_px, 1.0))
+                # A very close appearance match can rescue fragments that re-enter
+                # farther away, while weaker matches still need spatial support.
+                strong_appearance = appearance_distance <= max(
+                    0.12,
+                    self._reid_appearance_threshold * 0.55,
+                )
+                if spatial_distance > self._reid_spatial_threshold_px and not strong_appearance:
+                    continue
+
+                area_ratio = self._track_area_ratio(previous, current)
+                if area_ratio is not None and not 0.2 <= area_ratio <= 5.0:
+                    continue
+
+                spatial_score = spatial_distance / max(self._reid_spatial_threshold_px, 1.0)
+                if strong_appearance:
+                    spatial_score *= 0.25
+                gap_score = gap / max(self._reid_gap_frames, 1)
+                score = (appearance_distance * 2.0) + spatial_score + (gap_score * 0.25)
                 if best is None or score < best[0]:
                     best = (score, previous)
 
@@ -212,6 +229,11 @@ class PigeonTracker:
                 "Re-ID merged %d fragmented track(s): %s",
                 len(mapping),
                 mapping,
+            )
+        elif candidates_evaluated:
+            logger.info(
+                "Re-ID evaluated %d candidate track link(s); no safe merges",
+                candidates_evaluated,
             )
         return dict(mapping)
 
@@ -334,6 +356,22 @@ class PigeonTracker:
         curr_embedding = current.appearance_history[0]
         coefficient = float(np.sqrt(prev_embedding * curr_embedding).sum())
         return float(np.sqrt(max(0.0, 1.0 - min(1.0, coefficient))))
+
+    def _track_area_ratio(self, previous: Track, current: Track) -> float | None:
+        if not previous.bbox_history or not current.bbox_history:
+            return None
+        previous_area = self._bbox_area(previous.bbox_history[-1])
+        current_area = self._bbox_area(current.bbox_history[0])
+        if previous_area <= 0.0 or current_area <= 0.0:
+            return None
+        return current_area / previous_area
+
+    @staticmethod
+    def _bbox_area(bbox: list[float]) -> float:
+        return max(0.0, float(bbox[2]) - float(bbox[0])) * max(
+            0.0,
+            float(bbox[3]) - float(bbox[1]),
+        )
 
     def _canonical_id(self, track_id: int) -> int:
         seen: set[int] = set()

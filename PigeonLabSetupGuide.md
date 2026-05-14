@@ -168,12 +168,14 @@ PyTorch is the AI framework that PigeonLab uses to run the pigeon detection mode
 > 📋 Click to copy the command below, then paste it into Command Prompt (right-click to paste) and press **Enter**. Do not type it manually.
 
 ```
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
+pip install --force-reinstall torch==2.11.0+cu126 torchvision==0.26.0+cu126 torchaudio==2.11.0+cu126 --index-url https://download.pytorch.org/whl/cu126
 ```
 
 This downloads about 2–3 GB. You'll see a lot of text scrolling — that's normal. Wait until the `C:\>` cursor returns.
 
 ✅ **When it finishes** you'll see "Successfully installed torch..." in the output.
+PigeonLab pins this known-good PyTorch stack because it works on lab
+workstations with RTX A6000 GPUs and older approved NVIDIA drivers.
 
 ### Step 6.2 — Verify PyTorch Can See Your GPU
 
@@ -502,7 +504,7 @@ If you need to reference all the commands in one place, here they are in order:
 
 ```bash
 # Step 6 — PyTorch
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
+pip install --force-reinstall torch==2.11.0+cu126 torchvision==0.26.0+cu126 torchaudio==2.11.0+cu126 --index-url https://download.pytorch.org/whl/cu126
 
 # Step 7 — PigeonLab setup
 cd %USERPROFILE%\Documents

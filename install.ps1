@@ -91,6 +91,26 @@ function Test-IsWindows {
     return [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT
 }
 
+function Test-HuggingFaceCachedToken {
+    $candidatePaths = @()
+    if ($env:HF_HOME) {
+        $candidatePaths += (Join-Path $env:HF_HOME "token")
+    }
+    if ($env:USERPROFILE) {
+        $candidatePaths += (Join-Path $env:USERPROFILE ".cache\huggingface\token")
+    }
+
+    foreach ($path in $candidatePaths) {
+        if ($path -and (Test-Path -LiteralPath $path)) {
+            $token = (Get-Content -LiteralPath $path -Raw -ErrorAction SilentlyContinue)
+            if ($token -and $token.Trim().Length -gt 8) {
+                return $true
+            }
+        }
+    }
+    return $false
+}
+
 function Invoke-Python($PythonCmd, [string[]]$AdditionalArgs) {
     & $PythonCmd.Exe @($PythonCmd.Args) @AdditionalArgs
 }
@@ -139,9 +159,9 @@ PIGEONLAB_SAM3_ENABLE_WINDOWS_PATCHES=1
 PIGEONLAB_SAM3_OFFLOAD_VIDEO_TO_CPU=1
 PIGEONLAB_SAM3_FALLBACK_PER_FRAME=0
 PIGEONLAB_REID_ENABLED=1
-PIGEONLAB_REID_APPEARANCE_THRESHOLD=0.3
-PIGEONLAB_REID_GAP_FRAMES=30
-PIGEONLAB_REID_SPATIAL_THRESHOLD_PX=120
+PIGEONLAB_REID_APPEARANCE_THRESHOLD=0.55
+PIGEONLAB_REID_GAP_FRAMES=90
+PIGEONLAB_REID_SPATIAL_THRESHOLD_PX=240
 PIGEONLAB_ALLOW_HF_DOWNLOAD=0
 PIGEONLAB_VIDEO_INPUT_DIR=data/videos/inbox
 PIGEONLAB_VIDEO_OUTPUT_DIR=data/videos/output
@@ -235,8 +255,16 @@ try {
         & $VenvPython -m pip install --upgrade pip "setuptools<81" wheel
     }
     $TorchIndexUrl = if ($env:PIGEONLAB_TORCH_INDEX_URL) { $env:PIGEONLAB_TORCH_INDEX_URL } else { "https://download.pytorch.org/whl/cu126" }
+    $TorchVersion = if ($env:PIGEONLAB_TORCH_VERSION) { $env:PIGEONLAB_TORCH_VERSION } else { "2.11.0+cu126" }
+    $TorchVisionVersion = if ($env:PIGEONLAB_TORCHVISION_VERSION) { $env:PIGEONLAB_TORCHVISION_VERSION } else { "0.26.0+cu126" }
+    $TorchAudioVersion = if ($env:PIGEONLAB_TORCHAUDIO_VERSION) { $env:PIGEONLAB_TORCHAUDIO_VERSION } else { "2.11.0+cu126" }
+    $TorchPackages = @(
+        "torch==$TorchVersion",
+        "torchvision==$TorchVisionVersion",
+        "torchaudio==$TorchAudioVersion"
+    )
     Invoke-Checked "Install CUDA PyTorch stack" {
-        & $VenvPython -m pip install --no-cache-dir --force-reinstall torch torchvision torchaudio --index-url $TorchIndexUrl
+        & $VenvPython -m pip install --no-cache-dir --force-reinstall @TorchPackages --index-url $TorchIndexUrl
     }
     Invoke-Checked "Install backend requirements" {
         & $VenvPython -m pip install -r (Join-Path $Root "backend\requirements.txt")
@@ -274,24 +302,21 @@ try {
     }
 
     Write-Step "Optional SAM3.1 checkpoint download"
-    Write-Host "  SAM3.1 is gated on Hugging Face. If you have a token, paste it now."
-    Write-Host "  Press Enter to skip and download later from Settings/setup_check."
-    $SecureToken = Read-Host "  Hugging Face token" -AsSecureString
-    $TokenBstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($SecureToken)
-    $TokenPlain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($TokenBstr)
-    if ($TokenPlain -and $TokenPlain.Trim().Length -gt 0) {
-        $env:HF_TOKEN = $TokenPlain.Trim()
-        Invoke-Checked "Install Hugging Face Hub client" {
-            & $VenvPython -m pip install --upgrade huggingface_hub
-        }
+    Invoke-Checked "Install Hugging Face Hub client" {
+        & $VenvPython -m pip install --upgrade huggingface_hub
+    }
+    if (Test-HuggingFaceCachedToken) {
+        Write-Ok "Hugging Face cached token found"
         Invoke-Checked "Download SAM3.1 checkpoint" {
             & $VenvPython (Join-Path $Root "backend\scripts\download_sam3.py") --version sam3.1
         }
-        Remove-Item Env:\HF_TOKEN -ErrorAction SilentlyContinue
     } else {
-        Write-Warn "Skipped SAM3.1 checkpoint download."
+        Write-Warn "No cached Hugging Face token found; skipped SAM3.1 checkpoint download."
+        Write-Host "  SAM3.1 is gated on Hugging Face. In a new terminal, run:"
+        Write-Host "    hf auth login"
+        Write-Host "  Then rerun install.bat or run:"
+        Write-Host "    backend\venv\Scripts\python.exe backend\scripts\download_sam3.py --version sam3.1"
     }
-    [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($TokenBstr)
 
     Write-Step "Running final setup check"
     & $VenvPython (Join-Path $Root "backend\scripts\setup_check.py")

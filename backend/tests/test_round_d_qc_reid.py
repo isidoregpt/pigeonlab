@@ -96,6 +96,29 @@ class RoundDReIDRegressionTests(unittest.TestCase):
         self.assertEqual(mapping, {1: 0})
         self.assertGreater(tracker.average_confidence(0), 0.9)
 
+    @unittest.skipIf(PigeonTracker is None or np is None, "NumPy not installed in this Python")
+    def test_reid_allows_strong_appearance_match_after_larger_jump(self) -> None:
+        assert PigeonTracker is not None
+        assert np is not None
+        tracker = PigeonTracker(
+            max_lost_frames=0,
+            reid_enabled=True,
+            reid_appearance_threshold=0.55,
+            reid_gap_frames=90,
+            reid_spatial_threshold_px=120.0,
+        )
+        pale_frame = np.zeros((256, 256, 3), dtype=np.uint8)
+        pale_frame[:, :] = [190, 190, 195]
+
+        first = [{"bbox": [10, 10, 38, 38], "confidence": 0.95}]
+        second = [{"bbox": [190, 180, 218, 208], "confidence": 0.92}]
+
+        tracker.update(0, first, frame_bgr=pale_frame)
+        tracker.update(1, [], frame_bgr=pale_frame)
+        tracker.update(45, second, frame_bgr=pale_frame)
+
+        self.assertEqual(tracker.merge_fragmented_tracks(), {1: 0})
+
     @unittest.skipIf(VideoProcessor is None, "VideoProcessor dependencies not installed in this Python")
     def test_video_processor_rewrites_feature_and_pairwise_labels(self) -> None:
         assert VideoProcessor is not None

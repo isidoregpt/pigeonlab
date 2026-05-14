@@ -54,6 +54,21 @@ def _run_command(args: list[str]) -> tuple[bool, str]:
     return result.returncode == 0, output
 
 
+def _version_tuple(version: str) -> tuple[int, ...]:
+    parts: list[int] = []
+    for part in version.replace("-", ".").split("."):
+        digits = ""
+        for char in part:
+            if not char.isdigit():
+                break
+            digits += char
+        if digits:
+            parts.append(int(digits))
+        elif parts:
+            break
+    return tuple(parts)
+
+
 def _get_json(url: str, timeout: int = 3) -> tuple[bool, dict | str]:
     try:
         with urllib.request.urlopen(url, timeout=timeout) as response:
@@ -283,6 +298,12 @@ def run_checks() -> None:
     )
 
     ok, output = _run_command(["nvidia-smi", "--query-gpu=name,memory.total,driver_version", "--format=csv,noheader"])
+    driver_version = ""
+    if ok and output:
+        first_gpu = output.splitlines()[0]
+        gpu_parts = [part.strip() for part in first_gpu.split(",")]
+        if len(gpu_parts) >= 3:
+            driver_version = gpu_parts[-1]
     check(
         "NVIDIA driver",
         ok,
@@ -301,8 +322,29 @@ def run_checks() -> None:
             "PyTorch >= 2.7",
             (major, minor) >= (2, 7),
             f"torch {torch.__version__}",
-            "Install PyTorch 2.7+ with CUDA 12.6 support.",
+            "Install the pinned PyTorch 2.11.0 CUDA 12.6 stack.",
         )
+        if os.name == "nt":
+            check(
+                "PyTorch workstation stack",
+                torch.__version__.startswith("2.11.0+cu126"),
+                f"torch {torch.__version__}",
+                "Run install.bat or reinstall torch==2.11.0+cu126 from the PyTorch CUDA 12.6 index.",
+            )
+        if os.name == "nt" and driver_version and (major, minor) >= (2, 12):
+            driver_ok = _version_tuple(driver_version) >= (555,)
+            check(
+                "PyTorch/NVIDIA driver compatibility",
+                driver_ok,
+                f"torch {torch.__version__}, NVIDIA driver {driver_version}",
+                "Use torch==2.11.0+cu126 or update the NVIDIA driver to 555+ before using torch 2.12.",
+            )
+        else:
+            detail = (
+                f"torch {torch.__version__}, NVIDIA driver {driver_version or 'unknown'}"
+                if os.name == "nt" else f"torch {torch.__version__}"
+            )
+            check("PyTorch/NVIDIA driver compatibility", True, detail)
         cuda = torch.cuda.is_available()
         check("CUDA available", cuda, "Yes" if cuda else "No", "Install NVIDIA drivers and CUDA 12.6.")
         if cuda:
@@ -310,8 +352,15 @@ def run_checks() -> None:
         else:
             check("GPU detected", False, "No GPU found", "Install CUDA-compatible GPU drivers.")
     except ImportError:
-        check("PyTorch installed", False, "Not installed", "pip install torch torchvision")
-        check("PyTorch >= 2.7", False, "Not installed", "pip install torch torchvision")
+        torch_fix = (
+            "pip install --force-reinstall torch==2.11.0+cu126 "
+            "torchvision==0.26.0+cu126 torchaudio==2.11.0+cu126 "
+            "--index-url https://download.pytorch.org/whl/cu126"
+        )
+        check("PyTorch installed", False, "Not installed", torch_fix)
+        check("PyTorch >= 2.7", False, "Not installed", torch_fix)
+        if os.name == "nt":
+            check("PyTorch workstation stack", False, "Not installed", torch_fix)
         check("CUDA available", False, "PyTorch not installed")
         check("GPU detected", False, "PyTorch not installed")
 
